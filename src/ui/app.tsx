@@ -25,7 +25,7 @@ type Ask = { id: string; question: string; options?: string[] };
 
 const FEED_LIMIT = 400;
 
-export function Dashboard({ bridge, name: initialName }: { bridge: Bridge; name: string }) {
+export function Dashboard({ bridge, name: initialName, project }: { bridge: Bridge; name: string; project: string }) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [name, setName] = useState(initialName);
@@ -115,7 +115,7 @@ export function Dashboard({ bridge, name: initialName }: { bridge: Bridge; name:
 
   return (
     <Box flexDirection="column" width={width}>
-      <Header name={name} status={status} width={width} />
+      <Header name={name} project={project} status={status} width={width} />
       <StatusStrip status={status} />
 
       <Box flexDirection="column" flexGrow={1} marginTop={1}>
@@ -147,15 +147,17 @@ export function Dashboard({ bridge, name: initialName }: { bridge: Bridge; name:
   );
 }
 
-/** The agent's name owns the header. This project's name belongs in `--help`. */
-function Header({ name, status, width }: { name: string; status: Status; width: number }) {
+/** The agent's name owns the header, then the folder it was started in. */
+function Header({ name, project, status, width }: { name: string; project: string; status: Status; width: number }) {
   const state = label[status.state];
   const left = ` ${name}`;
+  const where = `  ${project}`;
   const right = `${state} · ${since(status.since)} `;
-  const gap = Math.max(1, width - left.length - right.length - 2);
+  const gap = Math.max(1, width - left.length - where.length - right.length - 2);
   return (
     <Box>
       <Text bold>{left}</Text>
+      <Text dimColor>{where}</Text>
       <Text>{' '.repeat(gap)}</Text>
       <Text color={color[status.state]}>{'● '}</Text>
       <Text color={color[status.state]}>{right}</Text>

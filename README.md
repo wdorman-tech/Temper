@@ -19,11 +19,21 @@ dispute and one that can only fill in a form.
 git clone https://github.com/wdorman-tech/Temper my-agent
 cd my-agent
 npm install        # also builds
-npm start          # or `npm link` once, then just `temper`, from anywhere
+npm link           # so `temper` works from any folder
+
+cd ~/work/acme     # the folder you want the agent to work on
+temper
 ```
 
 First run walks you through every setting one screen at a time and tells you
 where to get each one. Then it builds the container and signs you into Codex.
+
+The agent works on **the folder you ran it in, and nothing else on your
+machine**. Each folder gets its own container and its own memory, so an agent
+you start in `acme` knows nothing about `beta` and the two run side by side.
+Move to another folder, run `temper` again, and that's a different agent.
+(`npm start` always runs in the checkout, because that's where npm puts you —
+use the linked `temper` command for anything else.)
 
 To make it *yours*: point Claude Code at the repo. It'll interview you, write
 the north star, and build the tools. See [CLAUDE.md](CLAUDE.md).
@@ -96,13 +106,21 @@ doesn't cost you the session.
 
 Worth being precise about, because most agent frameworks aren't.
 
-**Hard boundary — the container.** The agent gets a volume and nothing else.
-Your filesystem isn't there. Delete the volume and it's factory-new. The runtime
-is root-owned and read-only to the agent, so the code enforcing the rules isn't
-code the agent can edit. This holds even if the model actively tries to get out.
+**Hard boundary — the container.** The agent gets a volume and one folder of
+yours. The rest of your filesystem isn't there. Delete the volume and it's
+factory-new. The runtime is root-owned and read-only to the agent, so the code
+enforcing the rules isn't code the agent can edit. This holds even if the model
+actively tries to get out.
 
-**The one hole you open yourself — mounts.** A host folder you name during setup
-appears at `/workspace/mounts/<name>`, read-only unless you set
+**The folder you started it in.** Wherever you ran `temper`, that folder is
+mounted writable at `/workspace/project` and nothing else on your disk is
+reachable. Working there is the whole point, so ordinary edits don't ask — but
+those are your real files, live, and **no gate sees a write**. Start the agent
+in a folder you'd survive losing, or one under version control. It's told to ask
+before deleting, overwriting anything you'd miss, or pushing.
+
+**The other hole you open yourself — mounts.** A host folder you name during
+setup appears at `/workspace/mounts/<name>`, read-only unless you set
 `writable: true`. If you make one writable, know what you've done: the agent's
 shell writes straight through to your real files and **no gate sees it**. Mount
 a copy, or a folder you'd survive losing.
@@ -144,14 +162,18 @@ effect simply doesn't run.
 ## Commands
 
 ```
-npm start              start the agent — the one you want
-npm start -- setup     walk through every setting again
-npm start -- login     forget the Codex login and sign in fresh
-npm start -- build     rebuild the container image
-npm start -- reset     delete the workspace: memory, journal, schedules
+temper                 start the agent in this folder — the one you want
+temper setup           walk through every setting again
+temper login           forget the Codex login and sign in fresh (all folders)
+temper build           rebuild the container image
+temper reset           delete this folder's workspace: memory, journal, schedules
 ```
 
-`npm link` once and these are just `temper`, `temper setup`, and so on.
+Without `npm link` these are `npm start`, `npm start -- setup`, and so on — but
+npm runs them in the checkout, so the agent works on the checkout. Link it.
+
+Everything except `build` and `login` is per-folder. `reset` throws away one
+folder's agent and leaves your files and your Codex login alone.
 
 ## Requirements
 

@@ -24,6 +24,10 @@ Do not start building tools before the north star exists.
 
 ## The map
 
+The agent works on the folder the human ran `temper` in, mounted writable at
+`/workspace/project`. Nothing else on their disk is reachable, and each folder
+has its own container, volume and memory.
+
 ```
 agent/               yours — this is the agent
   NORTH_STAR.md      what it's for. write this first.
@@ -130,10 +134,12 @@ nothing useful, the problem is your `AGENTS.md`, not the UI.
 
 `TEMPER_NAME` is what it's called — set it in `.env`, that's all you need.
 
-`manifest.name` is the *installation* id: it names the Docker image, the
-container, and the volume. Changing it after the agent has run orphans its
-memory, journal and schedules in the old volume. If you must, `docker volume ls`
-and move the data across.
+`manifest.name` is the *installation* id: it names the Docker image, and it is
+the first half of every container and volume name. The second half is the folder
+the agent was started in, because each folder gets its own agent. Changing
+`manifest.name` after the agent has run orphans its memory, journal and
+schedules in the old volume. If you must, `docker volume ls` and move the data
+across.
 
 ## House style
 

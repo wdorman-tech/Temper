@@ -96,9 +96,15 @@ function seed(): string {
   const notes = memory.index();
   const shown = notes.slice(0, INDEX_LIMIT);
   const handoff = memory.read('session-handoff');
+  const host = process.env.TEMPER_PROJECT;
   return [
     `Session started ${new Date().toISOString()} (${process.env.TEMPER_TZ ?? 'UTC'}).`,
     'Working directory is /workspace. AGENTS.md is how you operate; NORTH_STAR.md is why you exist.',
+    // The one thing that changes between two otherwise identical agents.
+    host
+      ? `They started you in ${host}, which is mounted at /workspace/project. That folder is the job, and ` +
+        `it is the only part of their machine you can see. Look there before you ask them what you are working on.`
+      : '',
     // Re-asserted on every arc, so compaction can never quietly repeal a rule.
     corrections.render(),
     notes.length

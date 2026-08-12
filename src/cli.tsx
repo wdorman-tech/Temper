@@ -2,12 +2,12 @@
 import { spawnSync } from 'node:child_process';
 import { watch } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { render } from 'ink';
 import { manifest } from '../agent/manifest.ts';
 import { mounts, readEnv, split } from './config.ts';
-import { ensureImage, has, localCodexAuth, start } from './docker.ts';
+import { authVolume, ensureImage, has, idFor, localCodexAuth, start } from './docker.ts';
 import { onboard } from './onboarding.tsx';
 import { encode, lineReader, type ToAgent, type ToHost } from './protocol.ts';
 import { Dashboard, type Bridge } from './ui/app.tsx';
@@ -15,16 +15,26 @@ import { Dashboard, type Bridge } from './ui/app.tsx';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const name = manifest.name;
 
+/**
+ * The folder you ran the command in is the job. It is the only part of your
+ * machine the agent can see, and it gets its own container, its own workspace
+ * volume and its own memory — so an agent you started in one project knows
+ * nothing about another, and the two can run side by side.
+ */
+const project = resolve(process.cwd());
+const id = idFor(name, project);
+
 const HELP = `
   temper — ${manifest.tagline}
 
-  temper           start the agent (this is the one you want)
+  temper           start the agent in this folder (this is the one you want)
   temper setup     walk through every setting again
   temper login     forget the Codex login and sign in fresh
   temper build     rebuild the container image
-  temper reset     delete the agent's workspace — memory, journal, schedules
+  temper reset     delete this folder's workspace — memory, journal, schedules
 
-  The agent runs in Docker and lives as long as this terminal does.
+  The agent works in the folder you run it in, and nothing else on your
+  machine. It runs in Docker and lives as long as this terminal does.
 `;
 
 const [command = 'up'] = process.argv.slice(2);
@@ -40,7 +50,8 @@ switch (command) {
     console.log('image ready');
     break;
   case 'login':
-    spawnSync('docker', ['run', '--rm', '--entrypoint', 'rm', '-v', `temper-${name}:/workspace`, await ensureImage(root, name), '-f', '/workspace/.codex/auth.json'], { stdio: 'inherit' });
+    // The login volume is shared by every folder, so this signs out everywhere.
+    spawnSync('docker', ['run', '--rm', '--entrypoint', 'rm', '-v', `${authVolume(name)}:/codex`, await ensureImage(root, name), '-f', '/codex/auth.json'], { stdio: 'inherit' });
     console.log('signed out. run `temper` to sign in again.');
     break;
   case 'reset':
@@ -59,12 +70,15 @@ switch (command) {
 
 async function reset() {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await rl.question(`This deletes ${name}'s memory, journal and schedules. Type the agent's name to confirm: `);
+  const answer = await rl.question(
+    `This deletes the memory, journal and schedules of the agent for ${project}.\n` +
+      `Your files in that folder are untouched. Type the agent's name to confirm: `,
+  );
   rl.close();
   if (answer.trim() !== name) return console.log('left alone.');
-  spawnSync('docker', ['rm', '-f', `temper-${name}`], { stdio: 'ignore' });
-  spawnSync('docker', ['volume', 'rm', `temper-${name}`], { stdio: 'inherit' });
-  console.log('gone.');
+  spawnSync('docker', ['rm', '-f', `temper-${id}`], { stdio: 'ignore' });
+  spawnSync('docker', ['volume', 'rm', `temper-${id}`], { stdio: 'inherit' });
+  console.log('gone. the Codex login is kept — `temper login` clears that.');
 }
 
 async function up(reconfigure: boolean) {
@@ -85,7 +99,16 @@ async function up(reconfigure: boolean) {
 
   const tag = await ensureImage(root, name);
   const { agent, gated, runtime } = split(manifest, settings);
-  const child = start({ root, name, tag, env: agent, mounts: mounts(manifest, settings) });
+  // The agent is told where it really is, so it can name a path back to you.
+  const child = start({
+    root,
+    name,
+    id,
+    project,
+    tag,
+    env: { ...agent, TEMPER_PROJECT: project, TEMPER_PROJECT_NAME: basename(project) },
+    mounts: mounts(manifest, settings),
+  });
 
   // Full-screen, and give the terminal back exactly as we found it.
   process.stdout.write('\x1b[?1049h');
@@ -106,7 +129,9 @@ async function up(reconfigure: boolean) {
   let stderr = '';
   child.stderr?.on('data', (chunk) => (stderr = (stderr + chunk).slice(-4000)));
 
-  const app = render(<Dashboard bridge={bridge} name={settings.TEMPER_NAME ?? name} />, { exitOnCtrlC: false });
+  const app = render(<Dashboard bridge={bridge} name={settings.TEMPER_NAME ?? name} project={basename(project)} />, {
+    exitOnCtrlC: false,
+  });
 
   const reuseLogin = settings.TEMPER_CODEX_LOGIN === 'reuse' && !settings.OPENAI_API_KEY;
   bridge.send({
