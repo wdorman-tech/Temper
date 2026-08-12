@@ -35,6 +35,16 @@ export type Activity = {
 
 export type Source = 'terminal' | 'phone' | 'room' | 'schedule' | 'system';
 
+/**
+ * Why the human is being asked.
+ *
+ * A `question` may be answered in prose, and silence is survivable — the agent
+ * is told to work around it. An `approval` gates an effect, so it is answered by
+ * choosing one of the options that was offered and by nothing else: silence is a
+ * refusal, and so is a sentence.
+ */
+export type AskKind = 'question' | 'approval';
+
 export type Msg = {
   id: string;
   role: 'you' | 'agent' | 'system';
@@ -48,7 +58,7 @@ export type ToHost =
   | { k: 'status'; status: Status }
   | { k: 'msg'; msg: Msg }
   | { k: 'activity'; activity: Activity }
-  | { k: 'ask'; id: string; question: string; options?: string[]; effect?: string }
+  | { k: 'ask'; id: string; question: string; options?: string[]; kind?: AskKind; tool?: string }
   | { k: 'resolved'; id: string } // an ask was answered elsewhere (your phone)
   | { k: 'login'; lines: string[] } // device-auth output, passed through verbatim
   | { k: 'notice'; level: 'info' | 'warn' | 'error'; text: string };
@@ -66,6 +76,15 @@ export type ToAgent =
       agentUpdateToken?: string;
       secrets?: Record<string, string>;
       tz?: string;
+      /**
+       * Proves an `answer` came from your terminal rather than from the sandbox.
+       * The supervisor and the agent's shell run as the same uid in the same
+       * container, so the shell can write to the supervisor's stdin through
+       * /proc — which, without this, is a forged approval. Minted per run by the
+       * host, held only in the supervisor's memory, never journalled, never in
+       * the environment.
+       */
+      answerToken?: string;
     }
   /**
    * Settings changed on disk. Sent whenever .env or agent/ changes, so a model
@@ -75,9 +94,24 @@ export type ToAgent =
   | { k: 'say'; text: string }
   /** A standing order. Outlives every session arc. */
   | { k: 'correct'; text: string }
-  | { k: 'answer'; id: string; value: string }
+  | { k: 'answer'; id: string; value: string; token?: string }
   | { k: 'interrupt' }
   | { k: 'ping' };
+
+/**
+ * The one way an option becomes an answer: an exact match, or its number.
+ *
+ * Shared by the terminal and the effect gate so the two cannot disagree about
+ * what the human said. Deliberately strict — substring matching is how "not
+ * allowed" becomes an approval.
+ */
+export function resolveChoice(answer: string, options?: string[]): string | null {
+  if (!options?.length) return null;
+  const text = answer.trim();
+  const index = Number(text);
+  if (Number.isInteger(index) && options[index - 1] !== undefined) return options[index - 1]!;
+  return options.find((option) => option.toLowerCase() === text.toLowerCase()) ?? null;
+}
 
 /** Split a byte stream into whole JSON lines. Tolerates partial chunks. */
 export function lineReader<T>(onValue: (value: T) => void) {

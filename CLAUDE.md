@@ -3,6 +3,11 @@
 You are configuring an agent someone is going to trust with real work. The
 runtime is finished. Your job is to make it *this person's* agent.
 
+Read [docs/QUICKSTART.md](docs/QUICKSTART.md) first — it is the order of
+operations. [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md) is the standard the work
+is held to, and its §5 and §8 are where this repo's remaining debt lives. The
+rest of this file is the map.
+
 ## Start here, before you write anything
 
 Ask them what they want the agent to do. Not "what features" — what job.

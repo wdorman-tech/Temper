@@ -1,3 +1,4 @@
+import type { AskKind } from '../protocol.ts';
 import { journal } from './journal.ts';
 
 /**
@@ -20,6 +21,37 @@ export type Inbound = {
 };
 
 export type Room = { id: string; name: string };
+
+export type Ask = {
+  text: string;
+  /** Up to six tappable answers. For an approval these are the *only* answers. */
+  options?: string[];
+  kind?: AskKind;
+  /** The tool whose effect is being gated. Approvals only. */
+  tool?: string;
+  /** Stable across retries, so a re-post after a rate limit is not a second question. */
+  nonce?: string;
+};
+
+/**
+ * What an approval looks like on a lock screen. Three parts, in this order:
+ * what is being asked for, what will actually happen, and what happens if they
+ * do nothing. The last one is not decoration — silence is a refusal here, and
+ * someone who reads the block as "I'll deal with it later" will be wrong.
+ */
+const approvalBlock = ({ text, tool }: Ask) =>
+  `Approve${tool ? ` · ${tool}` : ''}\n\n${text}\n\nTap an answer. No reply means no, and nothing runs.`;
+
+/**
+ * The approval frame belongs to the supervisor. A plain question carries text
+ * and option labels the *model* wrote, and the `ask` tool is deliberately
+ * ungated — so without this it could compose a lock-screen notification
+ * indistinguishable from a real gate and collect a "yes" for something that was
+ * never gated at all. Bracketing the imitation keeps the words and breaks the
+ * costume, the same trick `defang` plays on source tags in main.ts.
+ */
+const IMITATION = /^[ \t]*(approve[ \t]*·.*|tap an answer\..*)$/gim;
+const unframe = (text: string) => text.replace(IMITATION, (line) => `(${line.trim()})`);
 
 /** Collections come back either bare or wrapped depending on the endpoint. */
 const list = (result: any, key: string): any[] =>
@@ -75,15 +107,26 @@ export class AgentUpdate {
       body: JSON.stringify({ text: text.slice(0, 8000), nonce: crypto.randomUUID() }),
     });
 
-  /** Posts a question with tappable options. Returns its message id. */
-  async ask(question: string, options?: string[]): Promise<string | null> {
+  /**
+   * Posts a question block — text plus tappable options — and returns its id.
+   *
+   * Approvals are the same block with the stakes spelled out, because the phone
+   * is where most of them get answered and a lock screen carries no other
+   * context. The wire format stays `kind: 'question'`: the framing lives in the
+   * body, which is the part the app renders and the part we can rely on.
+   */
+  async ask(request: Ask): Promise<string | null> {
+    const text = request.kind === 'approval' ? approvalBlock(request) : unframe(request.text);
+    const options = request.options?.length
+      ? request.options.slice(0, 6).map((o) => (request.kind === 'approval' ? o : unframe(o)).slice(0, 48))
+      : null;
     const result = await this.call('/v1/agent/messages', {
       method: 'POST',
       body: JSON.stringify({
-        text: question.slice(0, 8000),
+        text: text.slice(0, 8000),
         kind: 'question',
-        nonce: crypto.randomUUID(),
-        ...(options?.length ? { options: options.slice(0, 6).map((o) => o.slice(0, 48)) } : {}),
+        nonce: request.nonce ?? crypto.randomUUID(),
+        ...(options ? { options } : {}),
       }),
     });
     return result?.id ?? null;

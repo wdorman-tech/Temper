@@ -1,6 +1,6 @@
 import { chmodSync, copyFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { encode, lineReader, type Activity, type Msg, type Source, type State, type Status, type ToAgent, type ToHost } from '../protocol.ts';
+import { encode, lineReader, resolveChoice, type Activity, type AskKind, type Msg, type Source, type State, type Status, type ToAgent, type ToHost } from '../protocol.ts';
 import { AgentUpdate, nameOf } from './agentupdate.ts';
 import { serve } from './bus.ts';
 import { corrections } from './corrections.ts';
@@ -25,8 +25,16 @@ import { ensureWorkspace, paths } from './workspace.ts';
 const out = (message: ToHost) => process.stdout.write(encode(message));
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** One shared never-settling promise, so losing a race doesn't leak a new one each time. */
-const NEVER = new Promise<string>(() => {});
+/** Where an answer came from matters: an approval granted on a phone is not a terminal event. */
+type Answer = { text: string; via: 'terminal' | 'phone' };
+
+/**
+ * A branch of the race that will never produce anything. Per call, deliberately:
+ * a shared module-level promise is a GC root, and resolving with it appends a
+ * reaction record that is never drained and never collected, so the "cheap"
+ * version is the one that leaks.
+ */
+const never = <T,>() => new Promise<T>(() => {});
 
 let status: Status = { state: 'booting', detail: 'starting up', metrics: {}, since: Date.now(), next: null };
 
@@ -75,57 +83,108 @@ const NUDGE_AFTER = 20 * 60_000;
 const GIVE_UP_AFTER = 60 * 60_000;
 
 /**
- * Ask, and wait. The question goes to the terminal and their phone at once;
- * whichever answers first wins.
+ * Ask, and wait. The question goes to the terminal and their phone at once, as
+ * the same block with the same options; whichever they answer first wins.
  *
  * Returns null when nobody answered in an hour. That is not a default answer —
  * every caller treats silence as "no" for anything with an effect, and only
  * plain questions are allowed to continue without one. A blocked ask used to
  * hold the entire queue: one 3am question and the agent was deaf until morning.
+ *
+ * `kind` changes nothing about the waiting and everything about the wording. An
+ * approval says on the lock screen that ignoring it is a refusal, because that
+ * is the one thing a person cannot infer from a notification.
  */
-async function askHuman(question: string, options?: string[]): Promise<string | null> {
+async function askHuman(question: string, options?: string[], meta: { kind?: AskKind; tool?: string } = {}): Promise<Answer | null> {
   const id = crypto.randomUUID();
+  const kind: AskKind = meta.kind ?? 'question';
+  const gating = kind === 'approval';
   const previous: State = status.state === 'waiting' ? 'working' : status.state;
-  out({ k: 'ask', id, question, options });
+  out({ k: 'ask', id, question, options, kind, tool: meta.tool });
   setStatus({ state: 'waiting', detail: question });
-  journal.record('ask', { id, question, options });
+  journal.record('ask', { id, question, options, kind, tool: meta.tool });
 
-  const fromTerminal = new Promise<string>((resolve, reject) => waiting.set(id, { resolve, reject }));
+  const fromTerminal = new Promise<string>((resolve, reject) => waiting.set(id, { resolve, reject })).then(
+    (text): Answer => ({ text, via: 'terminal' }),
+  );
+  /**
+   * Closing the loop on the phone. An approval answered at the desk otherwise
+   * leaves a live, tappable block on their lock screen, and a tap on a settled
+   * question resolves nothing and says nothing — they walk away believing they
+   * decided something they didn't.
+   *
+   * Both orders have to work: the post can also land *after* the ask settles,
+   * because a human at the terminal answers in three seconds and an HTTP request
+   * can take longer than that.
+   */
+  let posted: string | null = null;
+  let closing: string | null = null;
+  const closeOnPhone = () => {
+    if (posted && closing) void agentUpdate.send(closing);
+  };
+
   const fromPhone = (async () => {
-    const messageId = await agentUpdate.ask(question, options);
-    if (!messageId) {
-      if (agentUpdate.enabled) {
-        out({ k: 'notice', level: 'warn', text: 'could not reach your phone — this question is terminal-only' });
-      }
-      return NEVER;
+    if (!agentUpdate.enabled) return never<Answer>();
+    // One 429 must not cost an approval its only surface for the next hour: the
+    // backoff is a minute, and this is the same 2s cadence the answer loop uses.
+    const nonce = crypto.randomUUID();
+    for (let attempt = 0; posted === null && waiting.has(id) && attempt < 30; attempt++) {
+      if (attempt) await sleep(2_000);
+      posted = await agentUpdate.ask({ text: question, options, kind, tool: meta.tool, nonce });
+    }
+    if (posted === null) {
+      // Losing the phone costs a question some reach. It costs an approval the
+      // only surface the human was likely to be looking at, so say it louder.
+      out({
+        k: 'notice',
+        level: gating ? 'error' : 'warn',
+        text: gating
+          ? 'could not reach your phone — this approval can only be answered here'
+          : 'could not reach your phone — this question is terminal-only',
+      });
+      return never<Answer>();
+    }
+    // Settled while the post was in flight: the block is live and already stale.
+    if (!waiting.has(id)) {
+      closeOnPhone();
+      return never<Answer>();
     }
     while (waiting.has(id)) {
-      const answer = await agentUpdate.answer(messageId);
-      if (answer !== null) return answer;
+      const answer = await agentUpdate.answer(posted);
+      if (answer !== null) return { text: answer, via: 'phone' as const };
       // answer() returns immediately while rate-limit backoff is armed, so the
       // sleep is what stops this from starving the event loop.
       await sleep(2_000);
     }
-    return NEVER;
+    return never<Answer>();
   })();
 
   let nudge: NodeJS.Timeout | undefined;
   let giveUp: NodeJS.Timeout | undefined;
   const expiry = new Promise<null>((resolve) => {
     nudge = setTimeout(() => {
-      if (waiting.has(id)) void agentUpdate.send(`still waiting on this: ${question}`);
+      if (waiting.has(id)) {
+        void agentUpdate.send(gating ? `still waiting to run this: ${question}` : `still waiting on this: ${question}`);
+      }
     }, NUDGE_AFTER);
     giveUp = setTimeout(() => resolve(null), GIVE_UP_AFTER);
   });
 
+  let answer: Answer | null = null;
   try {
-    const answer = await Promise.race([fromTerminal, fromPhone, expiry]);
+    answer = await Promise.race([fromTerminal, fromPhone, expiry]);
     if (answer === null) {
-      journal.record('unanswered', { id, question });
-      out({ k: 'notice', level: 'warn', text: `no answer in an hour — the agent will work around it: ${question}` });
+      journal.record('unanswered', { id, question, kind });
+      out({
+        k: 'notice',
+        level: 'warn',
+        text: gating
+          ? `no answer in an hour — nothing ran: ${question}`
+          : `no answer in an hour — the agent will work around it: ${question}`,
+      });
     } else {
-      journal.record('answered', { id, answer });
-      say('you', answer, 'terminal');
+      journal.record('answered', { id, answer: answer.text, via: answer.via, kind });
+      say('you', answer.text, answer.via);
     }
     return answer;
   } finally {
@@ -134,6 +193,13 @@ async function askHuman(question: string, options?: string[]): Promise<string | 
     waiting.delete(id);
     out({ k: 'resolved', id });
     setStatus({ state: previous, detail: 'thinking' });
+    if (answer?.via !== 'phone') {
+      closing =
+        answer === null
+          ? `too late to answer — ${gating ? 'nothing ran' : 'worked around it'}: ${question}`
+          : `answered at the terminal (${answer.text}): ${question}`;
+      closeOnPhone();
+    }
   }
 }
 
@@ -262,7 +328,14 @@ const handlers = {
 const secrets = new Map<string, string>();
 
 const host = toolHost({
-  ask: askHuman,
+  ask: async (question, options) => (await askHuman(question, options))?.text ?? null,
+  // The gate decides what the options mean; this only decides whether they said
+  // one of them. Resolution is strict and shared with the terminal, so a reply
+  // that merely contains the word "allow" is not an approval.
+  approve: async ({ tool, preview, options }) => {
+    const answer = await askHuman(preview, options, { kind: 'approval', tool });
+    return { chosen: answer ? resolveChoice(answer.text, options) : null, answer: answer?.text ?? null };
+  },
   notify: async (text) => {
     say('agent', text, 'system');
     await agentUpdate.send(text);
@@ -288,6 +361,8 @@ serve({
 let lastPing = Date.now();
 let booting: Promise<void> | null = null;
 let agentUpdateToken: string | undefined;
+/** Memory only. Never journalled, never in the environment, never sent anywhere. */
+let answerToken: string | undefined;
 
 /**
  * Settings changed on disk. Everything the runtime reads is read at call time,
@@ -327,6 +402,14 @@ const read = lineReader<ToAgent>((message) => {
       applyCorrection(message.text);
       break;
     case 'answer':
+      // The one message that can grant an effect, so it is the one message we
+      // check the provenance of. Anything in this container can write to our
+      // stdin; only the host was given this token.
+      if (answerToken && message.token !== answerToken) {
+        journal.record('answer.forged', { id: message.id });
+        out({ k: 'notice', level: 'error', text: 'an answer arrived without the terminal\'s token and was ignored' });
+        break;
+      }
       waiting.get(message.id)?.resolve(message.value);
       break;
     case 'interrupt':
@@ -370,6 +453,7 @@ async function boot(hello: Extract<ToAgent, { k: 'hello' }>) {
   // Never put this in the container's environment: the agent's own shell can
   // read `env`, and this token speaks to the human as the agent.
   agentUpdateToken = hello.agentUpdateToken;
+  answerToken = hello.answerToken;
   agentUpdate = new AgentUpdate(agentUpdateToken);
 
   if (hello.authJson) {

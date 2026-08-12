@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { readFileSync, watch } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -134,9 +135,15 @@ async function up(reconfigure: boolean) {
   const restore = () => process.stdout.write('\x1b[?1049l');
   process.on('exit', restore);
 
+  // An approval is only an approval if it came from this terminal. The agent's
+  // shell shares a uid with the supervisor and can write to its stdin, so every
+  // answer carries a secret that only the host and the supervisor ever hold.
+  const answerToken = randomUUID();
+
   const listeners = new Set<(message: ToHost) => void>();
   const bridge: Bridge = {
-    send: (message: ToAgent) => child.stdin?.write(encode(message)),
+    send: (message: ToAgent) =>
+      child.stdin?.write(encode(message.k === 'answer' ? { ...message, token: answerToken } : message)),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -158,6 +165,7 @@ async function up(reconfigure: boolean) {
     tz: settings.TEMPER_TZ ?? timezone,
     secrets: gated,
     agentUpdateToken: runtime.AGENT_UPDATE_TOKEN,
+    answerToken,
     ...(reuseLogin ? { authJson: localCodexAuth() ?? undefined } : {}),
   });
 
