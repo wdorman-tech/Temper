@@ -33,6 +33,17 @@ Be specific: names, amounts, systems._
 > Example: Never send to anyone outside the company. Never reply to legal.
 > Never spend over $50 without me.
 
+## Where it runs
+
+_The agent works on the folder the human started it in — `/workspace/project` —
+and each folder is a separate copy with its own memory. Say what kind of folder
+this agent expects to find itself in, and name anything it needs from outside
+that folder, which has to be mounted in `manifest.ts` first. Never a host path:
+the folder changes, the agent doesn't._
+
+> Example: A client project repo. Invoices live in the shared drive mounted at
+> `mounts/billing`; nothing else outside the folder is available.
+
 ## What it needs to know
 
 _Context that isn't in any system: who matters, what's political, what a term

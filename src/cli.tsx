@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { watch } from 'node:fs';
+import { readFileSync, watch } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,18 +24,36 @@ const name = manifest.name;
 const project = resolve(process.cwd());
 const id = idFor(name, project);
 
-const HELP = `
-  temper — ${manifest.tagline}
+/**
+ * What the human actually types. `temper` is a placeholder — renaming the agent
+ * means renaming the `bin` key in package.json, so read the name from there
+ * rather than hard-coding one this checkout is meant to grow out of.
+ */
+const cli = binName() ?? name;
 
-  temper           start the agent in this folder (this is the one you want)
-  temper setup     walk through every setting again
-  temper login     forget the Codex login and sign in fresh
-  temper build     rebuild the container image
-  temper reset     delete this folder's workspace — memory, journal, schedules
+const HELP = `
+  ${cli} — ${manifest.tagline}
+
+  ${cli}           start the agent in this folder (this is the one you want)
+  ${cli} setup     walk through every setting again
+  ${cli} login     forget the Codex login and sign in fresh
+  ${cli} build     rebuild the container image
+  ${cli} reset     delete this folder's workspace — memory, journal, schedules
 
   The agent works in the folder you run it in, and nothing else on your
-  machine. It runs in Docker and lives as long as this terminal does.
+  machine. Run it in another folder and that is a second agent, with its own
+  memory and its own container; both can run at once. It runs in Docker and
+  lives as long as this terminal does.
 `;
+
+function binName(): string | null {
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+    return Object.keys(pkg.bin ?? {})[0] ?? null;
+  } catch {
+    return null;
+  }
+}
 
 const [command = 'up'] = process.argv.slice(2);
 
@@ -52,7 +70,7 @@ switch (command) {
   case 'login':
     // The login volume is shared by every folder, so this signs out everywhere.
     spawnSync('docker', ['run', '--rm', '--entrypoint', 'rm', '-v', `${authVolume(name)}:/codex`, await ensureImage(root, name), '-f', '/codex/auth.json'], { stdio: 'inherit' });
-    console.log('signed out. run `temper` to sign in again.');
+    console.log(`signed out. run \`${cli}\` to sign in again.`);
     break;
   case 'reset':
     await reset();
@@ -72,13 +90,14 @@ async function reset() {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const answer = await rl.question(
     `This deletes the memory, journal and schedules of the agent for ${project}.\n` +
-      `Your files in that folder are untouched. Type the agent's name to confirm: `,
+      `Agents you started in other folders, and your files in this one, are untouched.\n` +
+      `Type the agent's name to confirm: `,
   );
   rl.close();
   if (answer.trim() !== name) return console.log('left alone.');
   spawnSync('docker', ['rm', '-f', `temper-${id}`], { stdio: 'ignore' });
   spawnSync('docker', ['volume', 'rm', `temper-${id}`], { stdio: 'inherit' });
-  console.log('gone. the Codex login is kept — `temper login` clears that.');
+  console.log(`gone. the Codex login is kept — \`${cli} login\` clears that.`);
 }
 
 async function up(reconfigure: boolean) {
