@@ -29,7 +29,8 @@ First run walks you through every setting one screen at a time and tells you
 where to get each one. Then it builds the container and signs you into Codex.
 
 To make it *yours*: point Claude Code at the repo. It'll interview you, write
-the north star, and build the tools. See [CLAUDE.md](CLAUDE.md).
+the north star, and build the tools. See [CLAUDE.md](CLAUDE.md), and
+[docs/QUICKSTART.md](docs/QUICKSTART.md) for the order it should work in.
 
 `temper` is a placeholder, the same way `my-agent` is. The command is named
 after the agent you build: call yours Paul and you type `paul`, `paul setup`,
@@ -75,9 +76,11 @@ use the linked command for anything else.)
    ·       searched gmail: from:legal newer_than:3d
    ·       wrote memory/legal-thread.md
 
- ╭ needs you ─────────────────────────────────────────────────╮
- │ Send the redline reply to Dana?                            │
- │ 1 Allow once   2 Allow all session   3 No                  │
+ ╭────────────────────────────────────────────────────────────╮
+ │ approve · send_email                                       │
+ │ reply to Dana — contract redline, 2 attachments            │
+ │ 1 Allow once   2 No                                        │
+ │ pick one · no reply means no · also on your phone          │
  ╰────────────────────────────────────────────────────────────╯
 
  › ▮
@@ -106,13 +109,17 @@ your terminal is closed, nothing runs. On the next start it's told what it slept
 through and decides what's still worth doing.
 
 **Tools as files.** Drop a file in `agent/tools/`, export it, restart. Anything
-marked `effect: 'write'` stops and asks first, with a one-line preview of what's
-about to happen.
+marked `effect: 'write'` stops and asks first, as a question block with tappable
+options and a one-line preview of what's about to happen — in the terminal and on
+your phone at once, whichever you answer first. The options are the only answers
+that count: a sentence isn't a yes, and neither is silence.
 
 **Your phone.** [Agent Update](https://tryagentupdate.com) is the way out of the
 terminal — a line on your lock screen, a question with tappable answers, group
-chats where several of your agents and you talk in one room. Terminal and phone
-are the same conversation; answer wherever you are.
+chats where several of your agents and you talk in one room. Approvals go out as
+the same block, so "send this invoice?" is a decision you make from a queue
+rather than one you have to be at a desk for. Terminal and phone are the same
+conversation; answer wherever you are.
 
 **Standing orders.** `/correct always ship before polishing` records a rule that
 outlives every session. Corrections are re-read at the start of each one, so
@@ -153,14 +160,20 @@ shell writes straight through to your real files and **no gate sees it**. Mount
 a copy, or a folder you'd survive losing.
 
 **Soft boundary — the effect gate.** Tools that reach the outside world ask
-first. They run inside the supervisor rather than the tool server, so a shell
-that talks to the control socket gains nothing — it can invoke a tool, and that
-tool still has to clear you. What it can still do is skip tools entirely and use
-`curl`. A good fence, not a wall.
+first, as a question block on your terminal and your phone. The options offered
+are the only answers: an approval is a tap or a number, never a sentence, so a
+reply that merely contains the word "allow" can't be read as one — and silence
+after an hour is a no, not a later. They run inside the supervisor rather than
+the tool server, so a shell that talks to the control socket gains nothing — it
+can invoke a tool, and that tool still has to clear you. What it can still do is
+skip tools entirely and use `curl`. A good fence, not a wall.
 
 **Gated credentials.** Settings marked `scope: 'gated'` never enter the
-container's environment. The host holds them and releases one to a tool only
-inside a call you approved. `env` inside the sandbox shows nothing.
+container's environment. The supervisor holds them in memory and releases one to
+a tool only inside a call you approved, so `env` inside the sandbox shows
+nothing and the model can't read one by asking its own shell. It is not a
+guarantee against a compromised container — the supervisor runs in there too —
+it's a guarantee against the agent.
 
 The honest summary: the container is what stops a wrong agent from hurting you.
 Everything else raises the cost of a mistake.

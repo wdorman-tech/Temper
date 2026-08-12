@@ -1,15 +1,37 @@
 import type { State } from '../protocol.ts';
 
-/** One place to change how the dashboard feels. */
+/**
+ * One place to change how the whole thing feels.
+ *
+ * Tokens are semantic, never literal: nothing outside this file knows what
+ * colour `danger` is, which is what makes the accent a one-line change. Named
+ * colours rather than hex, because hex assumes truecolor and a dark background —
+ * a named colour inherits the palette the human already chose.
+ */
+export const accent = 'cyan';
+
 export const color = {
-  idle: 'gray',
-  thinking: 'cyan',
-  working: 'cyan',
-  waiting: 'yellow',
-  blocked: 'red',
-  error: 'red',
-  booting: 'gray',
+  accent,
+  text: 'white',
+  muted: 'gray',
+  ok: 'green',
+  warn: 'yellow',
+  danger: 'red',
+} as const;
+
+/** Colour carries meaning; `dimColor` carries hierarchy. Don't mix the two up. */
+export const stateColor = {
+  booting: color.muted,
+  idle: color.muted,
+  thinking: color.accent,
+  working: color.accent,
+  waiting: color.warn,
+  blocked: color.danger,
+  error: color.danger,
 } satisfies Record<State, string>;
+
+/** One border style, everywhere. Two of them reads as two products. */
+export const box = { style: 'round', paddingX: 1 } as const;
 
 export const label: Record<State, string> = {
   booting: 'starting',

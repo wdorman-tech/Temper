@@ -46,9 +46,10 @@ export type Tool<Args = any> = {
   input: ReturnType<typeof input>;
   /**
    * `write` means it changes something outside this container — sends mail,
-   * moves money, posts to an API, touches a mounted folder. Those tools ask
-   * the human first. Talking to the human is not an effect; acting on the
-   * world is.
+   * moves money, posts to an API, touches a mounted folder. Those tools stop
+   * and put an approval block in front of the human, in the terminal and on
+   * their phone, and run only if they choose to allow it. Talking to the human
+   * is not an effect; acting on the world is.
    */
   effect?: 'read' | 'write';
   /**
@@ -57,7 +58,12 @@ export type Tool<Args = any> = {
    * human would say yes to — a blanket yes to `send_email` is not that.
    */
   repeatable?: true;
-  /** One line shown in the approval prompt. Say what will actually happen. */
+  /**
+   * One line, shown in the approval block — in the terminal and on a phone lock
+   * screen, where it is the only context there is. Write the sentence someone
+   * needs in order to say yes or no: `invoice acme for $4,200`, not the tool
+   * name and a blob of JSON.
+   */
   preview?: (args: Args) => string;
   run: (args: Args, ctx: Ctx) => Promise<unknown>;
 };

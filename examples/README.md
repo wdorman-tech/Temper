@@ -50,7 +50,10 @@ Notice also that every tool here that acts on the world — sends, books,
 cancels, refunds — is `effect: 'write'`, and every preview reads like a sentence
 you could approve at a glance. That is the whole safety story at this layer: the
 agent can think whatever it likes, and the moment it wants to act, it stops and
-asks.
+puts a question block in front of you — in the terminal and on your phone — with
+the options that count. You pick one. A sentence isn't a yes, and neither is
+silence; both mean the tool didn't run. Write the preview for the phone, because
+that's where you'll answer it from.
 
 Talking to the human is exempt. `notify` and `room_send` reach them, not the
 world, and gating those would just teach you to click yes.
