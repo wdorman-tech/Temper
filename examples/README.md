@@ -31,7 +31,12 @@ export const tools: Tool[] = [/* ...the built-ins, */ searchInbox, draftReply, s
 // container and examples/ is not.
 ```
 
-`temper setup` will then ask for whatever is missing.
+`temper setup` — or `<your agent> setup` once you've renamed the command — will
+then ask for whatever is missing.
+
+None of these examples name a folder on your machine, and yours shouldn't
+either. Each one works on whichever folder the human started it in; anything
+outside that folder is a `mountAs` setting they have to name.
 
 ## A word on the shape of these
 

@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 
 /**
  * The agent runs in a container or it does not run.
@@ -42,6 +42,27 @@ function tagFor(root: string, name: string) {
 
 const run = (args: string[]) => spawnSync('docker', args, { encoding: 'utf8' });
 
+/**
+ * An agent belongs to the folder you started it in.
+ *
+ * That folder is folded into the container and volume names, so two folders are
+ * two agents with two memories, and both can run at once. The readable half is
+ * for `docker ps`; the hash is what actually keeps two folders called `client`
+ * apart.
+ */
+export function idFor(name: string, project: string) {
+  const path = resolve(project);
+  const slug = basename(path).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  // Windows paths are case-insensitive, so the same folder must hash the same
+  // however it was typed.
+  const key = process.platform === 'win32' ? path.toLowerCase() : path;
+  const hash = createHash('sha256').update(key).digest('hex').slice(0, 8);
+  return `${name}-${slug || 'folder'}-${hash}`;
+}
+
+/** Credentials are the human's, not the folder's, so every project shares them. */
+export const authVolume = (name: string) => `temper-${name}-codex`;
+
 export async function ensureImage(root: string, name: string, opts: { force?: boolean } = {}): Promise<string> {
   const tag = tagFor(root, name);
   if (!opts.force && run(['image', 'inspect', tag]).status === 0) return tag;
@@ -56,6 +77,10 @@ export async function ensureImage(root: string, name: string, opts: { force?: bo
 export type Launch = {
   root: string;
   name: string;
+  /** Per-folder identity from idFor() — names the container and the volume. */
+  id: string;
+  /** The folder the human ran the command in. The agent's job, and its cwd. */
+  project: string;
   tag: string;
   env: Record<string, string>;
   mounts: Array<{ host: string; as: string; readonly: boolean }>;
@@ -66,10 +91,10 @@ export type Launch = {
  * process's pipe, so when your terminal dies, stdin closes, the runtime exits,
  * and Docker removes the container. Nothing survives you.
  */
-export function start({ root, name, tag, env, mounts }: Launch): ChildProcess {
-  const container = `temper-${name}`;
+export function start({ root, name, id, project, tag, env, mounts }: Launch): ChildProcess {
+  const container = `temper-${id}`;
   if (run(['ps', '-q', '-f', `name=^${container}$`]).stdout.trim()) {
-    throw new Error(`${name} is already running in another terminal. Close that one first.`);
+    throw new Error(`An agent is already running in ${project}. Close that terminal, or start this one somewhere else.`);
   }
   run(['rm', '-f', container]);
 
@@ -81,7 +106,13 @@ export function start({ root, name, tag, env, mounts }: Launch): ChildProcess {
     '--pids-limit', '512',
     // Nothing inside can gain privileges it wasn't started with, even via setuid.
     '--security-opt', 'no-new-privileges',
-    '-v', `temper-${name}:/workspace`,
+    '-v', `temper-${id}:/workspace`,
+    // The Codex login is the human's, not this folder's. Sharing it means a new
+    // folder is a new agent but not a new sign-in.
+    '-v', `${authVolume(name)}:/workspace/.codex`,
+    // The job. Writable on purpose: an agent that can only read the folder you
+    // started it in cannot do the work you started it for.
+    '-v', `${resolve(project)}:/workspace/project`,
     '-v', `${join(root, 'agent')}:/app/agent:ro`,
   ];
   for (const mount of mounts) {

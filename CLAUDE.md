@@ -22,6 +22,20 @@ it wrong in production.
 
 Do not start building tools before the north star exists.
 
+## Two things about this boilerplate, before the map
+
+**The agent belongs to a folder.** It works on the folder the human ran the
+command in, mounted writable at `/workspace/project`. Nothing else on their disk
+is reachable, and each folder gets its own container, volume, memory, journal and
+schedules — so the same agent started in two folders is two agents that cannot
+see each other, running side by side. Design for that; see below.
+
+**`temper` is a placeholder name.** The command is named after the agent you're
+building. If they want an agent called Paul, `temper` becomes `paul` — in
+`manifest.name`, in `package.json`'s `name` and `bin`, and in every doc you
+write for them. Do it early, before the first run, and use their name in the
+files you write, not this one's.
+
 ## The map
 
 ```
@@ -61,6 +75,28 @@ src/                 the runtime. read it, rarely change it.
 setup. Nothing in it reaches the model. If the agent needs to know a setting
 exists — that `mounts/notes` is an Obsidian vault, that there's a Stripe key —
 say so in `NORTH_STAR.md`.
+
+## Write it for any folder, not one folder
+
+The human runs the command wherever the work is, and `cd` somewhere else is how
+they get a second copy. So everything you write has to hold in a folder you have
+never seen:
+
+- Refer to `/workspace/project`. Never write a host path — not in a tool, not in
+  `NORTH_STAR.md`, not in `AGENTS.md`. `C:\Users\...\acme` is wrong in every
+  folder but one.
+- Don't have the agent assume what's in the folder. Tell it to look.
+- Memory, journal and schedules are per folder. Something the agent learned in
+  `acme` does not exist in `beta`. Don't write instructions that depend on a
+  note the other copy wrote.
+- Anything outside the folder needs a `mountAs` setting the human names, and
+  then it lives at `/workspace/mounts/<name>`. That's the one way out, and it's
+  the human's decision, not yours.
+
+The exception is a job that genuinely lives in one place — a specific vault, one
+repo, a shared drive. Then say it out loud: add the mount to `manifest.ts`, and
+write in `NORTH_STAR.md` that this agent expects it. Ask before you assume that
+is what they want; the default is that the folder is the scope.
 
 ## Adding a tool
 
@@ -121,19 +157,44 @@ npm start -- setup    # walk the wizard as a new user would
 npm start             # run it
 ```
 
-(`npm link` once and it's just `temper`, `temper setup`.)
+(`npm link` once and it's just `temper`, `temper setup` — or `paul`,
+`paul setup`, once you've named it.)
+
+Test it from a folder that isn't the checkout. `cd` somewhere real and run the
+linked command: that is how the human will use it, and it's the only way to see
+that the agent works on their folder rather than on this repo.
 
 Watch the dashboard while it works. If the status line goes stale or says
 nothing useful, the problem is your `AGENTS.md`, not the UI.
 
-## Renaming the agent
+## Naming the agent
 
-`TEMPER_NAME` is what it's called — set it in `.env`, that's all you need.
+`temper` is this boilerplate's name, and it is meant to be replaced with the
+agent's. If they've called it Paul, they should be typing `paul`. Three places,
+best done before the first run:
 
-`manifest.name` is the *installation* id: it names the Docker image, the
-container, and the volume. Changing it after the agent has run orphans its
-memory, journal and schedules in the old volume. If you must, `docker volume ls`
-and move the data across.
+1. `manifest.name` — the *installation* id. It names the Docker image, and it is
+   the first half of every container and volume name. The second half is the
+   folder, because each folder gets its own agent.
+2. `package.json` — `name`, and the key in `bin`:
+   `"bin": { "paul": "dist/src/cli.js" }`. Then `npm run build && npm link`, and
+   the command is `paul`. The old `temper` link is stale; `npm unlink -g temper`
+   clears it.
+3. `TEMPER_NAME` in `.env` — what it calls itself on the dashboard and on their
+   phone. Safe to change any time.
+
+Then fix the docs you leave behind: `README.md`, and any command you wrote into
+`NORTH_STAR.md`.
+
+Leave the `TEMPER_*` environment keys alone. They're runtime plumbing read
+across `src/`, not branding, and renaming them is a refactor with no payoff. The
+same goes for the `temper-` prefix on containers and volumes: it's a namespace,
+it lives in `src/docker.ts`, and `docker ps` showing `temper-paul-acme-1f2e3d4`
+is the agent named paul, in the folder acme.
+
+Changing `manifest.name` after the agent has run orphans its memory, journal and
+schedules in the old volume, and drops the Codex login with them. If you must,
+`docker volume ls` and move the data across.
 
 ## House style
 
@@ -145,6 +206,10 @@ and move the data across.
 
 ## Do not
 
+- Do not leave it called `temper`. That's the boilerplate; the agent gets the
+  human's name for it, and the command gets the same name.
+- Do not hard-code a host path anywhere. The folder is whichever one they ran it
+  in, and there will be more than one.
 - Do not add approval prompts inside the container. The sandbox is the boundary;
   a second layer of asking just trains people to click yes.
 - Do not put secrets in the image or in `agent/`.

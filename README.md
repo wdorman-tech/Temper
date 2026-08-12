@@ -19,7 +19,10 @@ dispute and one that can only fill in a form.
 git clone https://github.com/wdorman-tech/Temper my-agent
 cd my-agent
 npm install        # also builds
-npm start          # or `npm link` once, then just `temper`, from anywhere
+npm link           # so `temper` works from any folder
+
+cd ~/work/acme     # the folder you want the agent to work on
+temper
 ```
 
 First run walks you through every setting one screen at a time and tells you
@@ -27,6 +30,38 @@ where to get each one. Then it builds the container and signs you into Codex.
 
 To make it *yours*: point Claude Code at the repo. It'll interview you, write
 the north star, and build the tools. See [CLAUDE.md](CLAUDE.md).
+
+`temper` is a placeholder, the same way `my-agent` is. The command is named
+after the agent you build: call yours Paul and you type `paul`, `paul setup`,
+`paul reset`. Read `temper` as *your agent's name* everywhere below —
+[naming it](#naming-it) is a two-minute change you make once.
+
+## One agent per folder
+
+The agent works on **the folder you ran it in, and nothing else on your
+machine**. Everything it writes that isn't your work — memory, journal,
+schedules, its whole workspace — lives in a Docker volume that belongs to that
+folder. Not in the folder, and not in this checkout.
+
+So `cd` is how you use it:
+
+```sh
+cd ~/work/acme && temper     # acme's agent
+cd ~/work/beta && temper     # in another terminal, at the same time
+```
+
+Same agent, same tools, same instructions — two containers, two volumes, two
+memories. The one in `acme` has never heard of `beta` and has no way to look.
+Run it in twenty folders if you like; they share the image and your Codex
+login, and nothing else.
+
+That confinement only widens if you widen it. A folder you name during setup is
+mounted at `/workspace/mounts/<name>`, read-only unless you ask for otherwise.
+A folder you never named isn't reachable — not by the agent's shell, not by
+asking it nicely.
+
+(`npm start` always runs in the checkout, because that's where npm puts you —
+use the linked command for anything else.)
 
 ## What you see
 
@@ -96,13 +131,23 @@ doesn't cost you the session.
 
 Worth being precise about, because most agent frameworks aren't.
 
-**Hard boundary — the container.** The agent gets a volume and nothing else.
-Your filesystem isn't there. Delete the volume and it's factory-new. The runtime
-is root-owned and read-only to the agent, so the code enforcing the rules isn't
-code the agent can edit. This holds even if the model actively tries to get out.
+**Hard boundary — the container.** The agent gets a volume and one folder of
+yours. The rest of your filesystem isn't there. Delete the volume and it's
+factory-new. The runtime is root-owned and read-only to the agent, so the code
+enforcing the rules isn't code the agent can edit. This holds even if the model
+actively tries to get out.
 
-**The one hole you open yourself — mounts.** A host folder you name during setup
-appears at `/workspace/mounts/<name>`, read-only unless you set
+**The folder you started it in.** Wherever you ran the command, that folder is
+mounted writable at `/workspace/project` and nothing else on your disk is
+reachable. Its own memory, journal and schedules are in that folder's volume, so
+a second copy started elsewhere is genuinely a second agent — same instructions,
+separate head. Working in the folder is the whole point, so ordinary edits don't
+ask — but those are your real files, live, and **no gate sees a write**. Start
+the agent in a folder you'd survive losing, or one under version control. It's
+told to ask before deleting, overwriting anything you'd miss, or pushing.
+
+**The other hole you open yourself — mounts.** A host folder you name during
+setup appears at `/workspace/mounts/<name>`, read-only unless you set
 `writable: true`. If you make one writable, know what you've done: the agent's
 shell writes straight through to your real files and **no gate sees it**. Mount
 a copy, or a folder you'd survive losing.
@@ -144,14 +189,42 @@ effect simply doesn't run.
 ## Commands
 
 ```
-npm start              start the agent — the one you want
-npm start -- setup     walk through every setting again
-npm start -- login     forget the Codex login and sign in fresh
-npm start -- build     rebuild the container image
-npm start -- reset     delete the workspace: memory, journal, schedules
+temper                 start the agent in this folder — the one you want
+temper setup           walk through every setting again
+temper login           forget the Codex login and sign in fresh (all folders)
+temper build           rebuild the container image
+temper reset           delete this folder's workspace: memory, journal, schedules
 ```
 
-`npm link` once and these are just `temper`, `temper setup`, and so on.
+`temper` is whatever you named the command; if your agent is Paul, every line
+above starts with `paul`.
+
+Without `npm link` these are `npm start`, `npm start -- setup`, and so on — but
+npm runs them in the checkout, so the agent works on the checkout. Link it.
+
+Everything except `build` and `login` is per-folder. `reset` throws away one
+folder's agent and leaves your files, your other folders and your Codex login
+alone.
+
+## Naming it
+
+One checkout, one agent, one name. Change these together, ideally before the
+first run:
+
+1. `manifest.name` in `agent/manifest.ts` — the installation id. It names the
+   image, the container and the volume, and it's what the setup wizard prints.
+2. `name` and `bin` in `package.json` — `"bin": { "paul": "dist/src/cli.js" }`.
+   Then `npm run build && npm link` and the command is `paul`.
+3. `TEMPER_NAME` in `.env` — what it calls *itself*, on the dashboard and on
+   your phone. This one you can change any time.
+
+What you don't rename: the `TEMPER_*` environment keys. They're the runtime's
+plumbing, not branding, and renaming them means editing `src/`.
+
+Renaming `manifest.name` after the agent has run leaves its memory, journal and
+schedules behind in the old volume — `docker volume ls` and move them across, or
+accept a fresh start. The Codex login moves with the name too, so you sign in
+once more.
 
 ## Requirements
 
@@ -164,5 +237,8 @@ edit, not a dependency you install.
 Tempering is what turns brittle steel into steel that holds, which is the whole
 problem with agents meant to run for weeks. Temper is also disposition: this
 one's is short, direct and unbothered.
+
+It's the boilerplate's name, though, not your agent's. Yours gets its own — see
+[naming it](#naming-it).
 
 MIT.

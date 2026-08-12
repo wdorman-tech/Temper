@@ -3,15 +3,24 @@ import type { Manifest } from '../src/config.ts';
 /**
  * Everything this agent needs to exist, and how a human gets it.
  *
- * This drives onboarding. Add a setting here and `temper` will walk the next
- * person through finding it — so write `why` and `how` for someone who has
+ * This drives onboarding. Add a setting here and the setup wizard will walk the
+ * next person through finding it — so write `why` and `how` for someone who has
  * never seen the service before, not for yourself.
+ *
+ * A setting that names a host folder (`mountAs`) is the only way the agent sees
+ * anything outside the folder it was started in. Everything else it touches is
+ * that folder, or its own workspace volume.
  *
  * Settings are only ever shown to the human. If the *agent* needs to know
  * something — that a folder is an Obsidian vault, that a key exists — say it in
  * NORTH_STAR.md too. Nothing here reaches the model.
  */
 export const manifest: Manifest = {
+  // The installation id, and a placeholder. Rename it to whatever this agent is
+  // called — an agent named Paul is `name: 'paul'`, with `bin` in package.json
+  // renamed to match so the human types `paul`. Do it before the first run: it
+  // names the image, the container and the volume, and changing it later leaves
+  // the agent's memory behind in the old one. See CLAUDE.md.
   name: 'temper',
   tagline: 'a terse agent that lives in your terminal',
 
