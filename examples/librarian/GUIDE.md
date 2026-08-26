@@ -298,7 +298,12 @@ Not `trash {"path":"notes/Old Stub.md","why":"…"}`. It is not `repeatable`.
 Three checks in [`tools.ts`](tools.ts) enforce two of the four invariants.
 
 ```ts
-const from = realpathSync.native(resolve(VAULT, args.path));
+let from: string;
+try {
+  from = realpathSync.native(resolve(VAULT, args.path));
+} catch {
+  throw new Error(`${args.path} is not in the vault. Check the path before trashing it.`);
+}
 const rel = relative(realpathSync.native(VAULT), from);
 if (!rel) throw new Error('That is the vault itself, not a page in it.');
 if (rel.startsWith('..')) throw new Error(`${args.path} resolves outside the vault.`);
@@ -306,9 +311,14 @@ if (rel.startsWith('..')) throw new Error(`${args.path} resolves outside the vau
 
 `realpath`, not `resolve` — see §4. `resolve` normalises `..` and an absolute
 path but does not follow a symlink, and a vault with one in it is a vault the
-agent can walk out of. Note the two branches: an empty `rel` means the vault
-root, which is not "outside the vault", and telling the model it is teaches it
-something false about its own boundary.
+agent can walk out of.
+
+Three branches, and each of them is a different sentence to the model.
+`realpath` **throws** on a path that is not there, which is the common case and
+which would otherwise arrive as a raw `ENOENT` — and an existence check further
+down would never be reached, because this line runs first. An empty `rel` means
+the vault root, which is not "outside the vault"; telling the model it is
+teaches it something false about its own boundary.
 
 ```ts
 if (rel.split('/')[0] === 'raw') {

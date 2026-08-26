@@ -225,7 +225,16 @@ export const trash = defineTool<{ path: string; why: string }>({
     // symlink inside the project folder resolves on the *host* side of the bind
     // mount — so a path check built on `resolve` alone walks straight out of the
     // sandbox while looking like it did not.
-    const from = realpathSync.native(resolve(VAULT, args.path));
+    //
+    // It throws on a path that is not there, which is the common case and not an
+    // error anyone should have to read a stack trace for. Catch it here, because
+    // an existence check further down would never be reached.
+    let from: string;
+    try {
+      from = realpathSync.native(resolve(VAULT, args.path));
+    } catch {
+      throw new Error(`${args.path} is not in the vault. Check the path before trashing it.`);
+    }
     const rel = relative(realpathSync.native(VAULT), from);
     if (!rel) throw new Error('That is the vault itself, not a page in it.');
     if (rel.startsWith('..')) throw new Error(`${args.path} resolves outside the vault.`);
@@ -241,8 +250,6 @@ export const trash = defineTool<{ path: string; why: string }>({
     }
     // Fail loudly. A trash that reports success on a path that was never there
     // teaches the agent a page is gone when it is not.
-    if (!existsSync(from)) throw new Error(`${rel} does not exist.`);
-
     const day = new Date().toISOString().slice(0, 10);
     const to = join(VAULT, '.librarian', 'trash', day, rel);
     mkdirSync(dirname(to), { recursive: true });
