@@ -52,8 +52,10 @@ agent/               yours — this is the agent
   tools/             what it can do. add files here.
     _kit.ts          defineTool, input(), and the Ctx a tool is handed.
 
-examples/            three complete agents — email triage, calendar, business
-                     ops. Read one before designing tools; they show the shape.
+examples/            three finished agents — librarian, calendar,
+                     quartermaster. Each carries a GUIDE.md that builds it end
+                     to end, with the reasoning. Read one before designing
+                     tools; it will save you a redesign.
 
 src/                 the runtime. read it, rarely change it.
   cli.tsx            host entry: preflight, onboarding, container, dashboard

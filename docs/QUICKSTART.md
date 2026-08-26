@@ -19,10 +19,12 @@ sequenced on purpose: every one of them is cheap now and expensive later.
 | `README.md` | What the thing is, and the boundaries it promises. |
 | `CLAUDE.md` | House rules for this repo. They override your defaults. |
 | `agent/AGENTS.md` | The voice. Every word you write for the agent matches it. |
-| `examples/<one of them>` | The shape of a finished agent. Pick the closest. |
+| `examples/<one of them>/GUIDE.md` | A finished agent, built end to end. Pick the closest. |
 | `BUILD_GUIDE.md` §5 | The interface standard. Non-negotiable. |
 
-Do not skim the example. Read one end to end. It will save you a redesign.
+Do not skim the example. Read one `GUIDE.md` end to end. It will save you a
+redesign, and it is where the reasoning lives — the three agents differ in
+which effects they gate and why, which is the decision you are about to make.
 
 ---
 
