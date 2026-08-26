@@ -57,9 +57,12 @@ const memberNames = (room: LiveRoom): string[] =>
 /**
  * Whole-word match, never `includes`.
  *
- * A substring test makes "Bee" match "Beekeeper" and makes any one-letter name
- * match every room on the list — which posts someone's work to the wrong agent
- * and then reports success.
+ * A substring test resolves "Bee" against a room called "Beekeeper", and makes
+ * any one-letter name match every room on the list — which posts someone's work
+ * to the wrong agent and then reports success.
+ *
+ * Exported because it is the one piece of this file worth a unit test: it takes
+ * two strings and returns a boolean, so it can be checked without a `Ctx`.
  */
 export const mentions = (hay: string, needle: string): boolean => {
   const clean = needle.trim().toLowerCase();

@@ -83,8 +83,14 @@ type RawEvent = {
 const when = (edge: RawEvent['start']): string => edge?.dateTime ?? edge?.date ?? '';
 const allDay = (event: RawEvent): boolean => Boolean(event.start?.date);
 
-/** The line that decides which tool may touch an event. */
-const guests = (event: RawEvent): number => (event.attendees ?? []).filter((a) => !a.self).length;
+/**
+ * The line that decides which tool may touch an event.
+ *
+ * Named for what it returns. `guests(event) > 0` reads fine and is a silent bug
+ * waiting for whoever implements it as a list — `[a, b] > 0` is `false`, and the
+ * guard stops guarding without ever failing.
+ */
+const guestCount = (event: RawEvent): number => (event.attendees ?? []).filter((a) => !a.self).length;
 
 const shape = (event: RawEvent) => ({
   id: event.id,
@@ -92,7 +98,7 @@ const shape = (event: RawEvent) => ({
   start: when(event.start),
   end: when(event.end),
   all_day: allDay(event),
-  has_guests: guests(event) > 0,
+  has_guests: guestCount(event) > 0,
   attendees: (event.attendees ?? []).map((a) => a.email),
   my_response: (event.attendees ?? []).find((a) => a.self)?.responseStatus ?? null,
   i_organize: event.organizer?.self === true,
@@ -150,7 +156,7 @@ async function clash(ctx: Ctx, start: string, end: string, ignore?: string): Pro
  */
 async function mineAlone(ctx: Ctx, eventId: string): Promise<RawEvent> {
   const event = await getEvent(ctx, calendarId(), eventId);
-  const others = guests(event);
+  const others = guestCount(event);
   if (others > 0) {
     throw new Error(
       `"${event.summary ?? eventId}" has ${others} other people on it, so hold will not touch it. ` +

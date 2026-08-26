@@ -303,7 +303,7 @@ Two helpers in [`tools.ts`](tools.ts) enforce the never-list.
 ```ts
 async function mineAlone(ctx: Ctx, eventId: string): Promise<RawEvent> {
   const event = await getEvent(ctx, calendarId(), eventId);
-  const others = guests(event);
+  const others = guestCount(event);
   if (others > 0) {
     throw new Error(
       `"${event.summary ?? eventId}" has ${others} other people on it, so hold will not touch it. ` +
@@ -317,8 +317,16 @@ async function mineAlone(ctx: Ctx, eventId: string): Promise<RawEvent> {
 `hold` is ungated, so it is the tool to reach for when a gated one refuses. It
 fetches the event and refuses before doing anything, and the refusal names the
 tool that *is* allowed — an error that only says no leaves the agent to invent a
-workaround. `guests()` counts attendees where `self` is false, so an event with
-only the human on it has none.
+workaround. `guestCount()` counts attendees where `self` is false, so an event
+with only the human on it has none — and it is named for what it returns,
+because `guests(event) > 0` reads fine and is a silent bug for whoever
+implements it as a list.
+
+**Zero attendees is the whole test.** `hold` does not check who created the
+event, so a solo entry the human made himself is inside the ungated lane. That
+is the deliberate price of not asking about his own time, and it is worth
+saying out loud at interview — "delete anything on my calendar with nobody else
+on it, without asking" is a sentence some people will not agree to.
 
 ### `clash` — "never double-booked" as code
 

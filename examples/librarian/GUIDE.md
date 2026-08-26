@@ -136,8 +136,9 @@ sentence of rule and one of why, because a rule whose reason the model can
 reconstruct survives a paraphrase.
 
 **The credential list is a list, not a principle.** Eleven globs, spelled out.
-`recovery code` and `backup code` are covered by none of the shorter patterns,
-which is why enumerating beats generalising.
+`*code*` would be shorter and catch two of them — and also catch every page
+about code. The list is a list because an enumeration can be checked against a
+vault and a principle can only be argued with.
 
 **Ask-once-per-run, with the four forks named.** A naming convention about to be
 applied to many pages; whether two pages should merge; anything destructive

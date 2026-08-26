@@ -120,6 +120,9 @@ Read those four together and they are one rule: *say how you know.*
 "asked 14 minutes ago, nothing yet" — and a finding only when you know that
 agent's normal well enough to expect faster.* That sentence is why
 `expect_within_minutes` is optional and why `overdue` is false without it.
+Nothing here observes an agent long enough to learn its normal on its own: the
+agent writes what it has seen into a memory note, reads that note, and passes
+the number in. Say so, or it will pass a guess.
 
 **Room identity is asked for, never remembered.** A room re-made in the app has
 a new id and the same people in it. A post that fails with "that group chat
