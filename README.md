@@ -32,6 +32,11 @@ To make it *yours*: point Claude Code at the repo. It'll interview you, write
 the north star, and build the tools. See [CLAUDE.md](CLAUDE.md), and
 [docs/QUICKSTART.md](docs/QUICKSTART.md) for the order it should work in.
 
+[`examples/`](examples) has three finished agents — one that keeps an Obsidian
+vault, one that owns a calendar, one that hands work to your other agents and
+notices when one goes quiet. Each carries a `GUIDE.md` that builds it end to
+end with the reasoning, and reading the closest one first is worth an hour.
+
 `temper` is a placeholder, the same way `my-agent` is. The command is named
 after the agent you build: call yours Paul and you type `paul`, `paul setup`,
 `paul reset`. Read `temper` as *your agent's name* everywhere below —

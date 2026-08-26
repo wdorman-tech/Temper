@@ -265,7 +265,8 @@ function Line({ entry, name, width }: { entry: Entry; name: string; width: numbe
 
   const { msg } = entry;
   const from = msg.role === 'you' ? 'you' : msg.role === 'agent' ? name : '';
-  const tag = msg.source === 'phone' ? ' (phone)' : msg.source === 'room' ? ' (room)' : '';
+  const tag =
+    msg.source === 'phone' ? ' (phone)' : msg.source === 'room' || msg.source === 'peer' ? ' (room)' : '';
   return (
     <Box>
       <Text bold={msg.role === 'you'} color={msg.role === 'you' ? color.text : color.accent}>

@@ -1,59 +1,72 @@
 # Examples
 
-Three agents built on this runtime. They are here to be read, and to be copied
-when one is close to what you want.
+Three finished agents. Each is a real job worked all the way through: what it
+is for, where the line is, and the two to eight things it can do that the shell
+cannot.
 
-Each folder has the same three pieces, which is all an agent is:
+| | The job | The thing worth stealing |
+| --- | --- | --- |
+| [`librarian/`](librarian) | Keeps an Obsidian vault as connected pages rather than a pile of summaries | Making the vault the folder you start in, so the mount disappears |
+| [`calendar/`](calendar) | Owns a calendar: protects deep work, absorbs the scheduling back-and-forth | Splitting one job across a gated tool and an ungated one, on who a change reaches |
+| [`quartermaster/`](quartermaster) | Hands work to the other agents and notices when one goes quiet | State as a fold over the journal, so a session rotation cannot lose the ledger |
 
-- `NORTH_STAR.md` — what it's for, and where the line is
-- `tools.ts` — the handful of things it can do that the shell can't
+Each folder has four files:
+
+- `GUIDE.md` — the build, start to finish, with the reasoning. Read this one.
+- `NORTH_STAR.md` — what it is for, and where the line is
+- `tools.ts` — the handful of things it can do that the shell cannot
 - `settings.ts` — the credentials it needs and how a human gets them
 
 ## Using one
 
 ```sh
-cp examples/email-triage/NORTH_STAR.md agent/NORTH_STAR.md
-cp examples/email-triage/tools.ts      agent/tools/inbox.ts
+cp examples/calendar/NORTH_STAR.md agent/NORTH_STAR.md
+cp examples/calendar/tools.ts      agent/tools/calendar.ts
 ```
 
-In the copied `agent/tools/inbox.ts`, shorten the import to `./_kit.ts`. Then
-two edits:
+In the copied `agent/tools/calendar.ts`, shorten the import to `./_kit.ts`.
+Then two edits:
 
 ```ts
 // agent/tools/index.ts
-import { archive, draftReply, searchInbox, sendDraft } from './inbox.ts';
-export const tools: Tool[] = [/* ...the built-ins, */ searchInbox, draftReply, sendDraft, archive];
+import { agenda, book, calendars, cancel, freebusy, hold, reschedule, rsvp } from './calendar.ts';
+export const tools: Tool[] = [/* ...the built-ins, */ calendars, agenda, freebusy, hold, book, reschedule, cancel, rsvp];
 ```
 
 ```ts
-// agent/manifest.ts — paste the entries from examples/email-triage/settings.ts
+// agent/manifest.ts — paste the entries from examples/calendar/settings.ts
 // into the settings array. Paste, don't import: agent/ is mounted into the
 // container and examples/ is not.
 ```
 
-`temper setup` — or `<your agent> setup` once you've renamed the command — will
-then ask for whatever is missing.
+Then `temper setup` — or `<your agent> setup` once you have renamed the
+command — asks for whatever is missing.
 
-None of these examples name a folder on your machine, and yours shouldn't
-either. Each one works on whichever folder the human started it in; anything
-outside that folder is a `mountAs` setting they have to name.
+None of these examples names a folder on your machine, and yours should not
+either. Each works on whichever folder the human started it in; anything
+outside that folder is a `mountAs` setting they have to name, and none of these
+three needs one.
 
-## A word on the shape of these
+## The shape of these
 
-Notice how few tools each one has. The agent already has a shell, `curl`,
-`python3` and web search inside its container — it does not need a tool to read
-a file or do arithmetic. A tool earns its place when it holds a credential,
-gates an effect, or turns a fiddly API into something the model can use without
-a manual.
+Each one has very few tools. Inside its container the agent already has a shell,
+`curl`, `python3`, `git` and the web. A tool earns its place when it holds a
+credential, gates an effect, or turns a fiddly API into one honest verb.
+Librarian's whole job runs on two.
 
-Notice also that every tool here that acts on the world — sends, books,
-cancels, refunds — is `effect: 'write'`, and every preview reads like a sentence
-you could approve at a glance. That is the whole safety story at this layer: the
-agent can think whatever it likes, and the moment it wants to act, it stops and
-puts a question block in front of you — in the terminal and on your phone — with
-the options that count. You pick one. A sentence isn't a yes, and neither is
-silence; both mean the tool didn't run. Write the preview for the phone, because
-that's where you'll answer it from.
+Every tool here that acts on another person — sends, books, invites, cancels —
+is `effect: 'write'`, and every `preview` reads like a sentence you could
+approve at a glance. The gate is the whole safety story at this layer; see
+BUILD_GUIDE §4. Write the preview for the phone, because that is where you will
+answer it from.
 
 Talking to the human is exempt. `notify` and `room_send` reach them, not the
-world, and gating those would just teach you to click yes.
+world, and gating those would only teach you to tap yes. Quartermaster has no
+gated tool at all, for exactly that reason, and its guide says so out loud.
+
+The rules live in code where they can. "Never double-book" and "`raw/` is
+append-only" are a `throw` in the tool rather than a paragraph in a prompt — so
+the correct path is also the easy one, and every removal lands in the journal
+with a reason attached. The shell can still `rm`: the sandbox is the boundary,
+not the tool. Each guide names the two or three lines where its job actually
+gets safer, and what they do not cover.

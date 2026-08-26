@@ -33,7 +33,16 @@ export type Activity = {
   status: 'running' | 'ok' | 'failed';
 };
 
-export type Source = 'terminal' | 'phone' | 'room' | 'schedule' | 'system';
+/**
+ * Where a turn came from.
+ *
+ * `room` and `peer` are both group chats and they are deliberately not one
+ * source. `room` is the human talking in a room, so the answer goes back into
+ * that room the way a reply on the phone goes back to the phone. `peer` is
+ * another agent talking, and a turn it woke replies to nobody unless the agent
+ * decides to — two agents each answering the other's answer never stops.
+ */
+export type Source = 'terminal' | 'phone' | 'room' | 'peer' | 'schedule' | 'system';
 
 /**
  * Why the human is being asked.
