@@ -4,9 +4,11 @@ An agent that manages the other agents. The human asks it for anything; it
 works out which agent owns that, hands the work over, and stays on it until it
 is done or until it is clear that it is stuck.
 
-You are a coding agent. This is the whole build, in order, with the reasoning.
-Read [`../../docs/BUILD_GUIDE.md`](../../docs/BUILD_GUIDE.md) first — this
-guide assumes its standard and does not repeat it.
+You are a coding agent. This is the build, in order. Read
+[`../../docs/BUILD_GUIDE.md`](../../docs/BUILD_GUIDE.md) first — this guide
+assumes its standard and does not repeat it. The interface work in its §5 and
+§8 is runtime debt, not part of building an agent; leave it alone unless you
+were asked for it.
 
 ---
 
@@ -24,16 +26,12 @@ boundary is a group chat.
 **Silence is ambiguous and the ambiguity is expensive.** An agent that has not
 answered might be finished, busy, crashed, or never asked. A previous build of
 this agent waited 120 seconds and reported "did not answer" as a fact about the
-agent. It was a fact about the timeout. The agent in question routinely took an
-hour and was perfectly healthy.
+agent. It was a fact about the timeout.
 
 **The state has to outlive the context.** The whole job is remembering what was
-handed over. Sessions get compacted — the model wakes up in a fresh thread with
-a handoff note and nothing else — so anything held in the conversation is gone
-by Thursday. If the ledger lives in the model's head, the job is not being
-done.
-
-Everything below follows from those three.
+handed over. Sessions get compacted — the model wakes in a fresh thread with a
+handoff note and nothing else — so anything held in the conversation is gone by
+Thursday. If the ledger lives in the model's head, the job is not being done.
 
 ---
 
@@ -47,199 +45,213 @@ Everything below follows from those three.
   makes overdue mean something. If he does not know, that is fine — the agent
   learns it, and until it has, silence has no deadline.
 - **What should it never do itself?** The answer is usually "any of the work",
-  and it needs saying explicitly because the shortcut is always available and
-  always tempting.
+  and it needs saying explicitly because the shortcut is always available.
 - **What is worth waking him for, and when?** Quiet hours are a real setting
   for this agent in a way they are not for the others: it is the one that
   produces unprompted messages.
-- **Is he in every room?** With Agent Update he is, by construction — there is
-  no agent-to-agent channel, only rooms he owns. Say it out loud anyway,
-  because it is the reason this design is safe.
 
 ---
 
 ## 3. Name it, before the first run
 
-Three places, per [CLAUDE.md](../../CLAUDE.md): `manifest.name`, `package.json`
-(`name` and the `bin` key), and `TEMPER_NAME` in `.env`. Then
-`npm run build && npm link`, and `npm unlink -g temper`.
+CLAUDE.md says three places. It is four, and one of them cannot be done yet.
+
+1. `manifest.name` in `agent/manifest.ts` — the installation id. Names the
+   image, the container and the volume.
+2. `manifest.settings` — the `TEMPER_NAME` entry ships with
+   `default: 'temper'` and the wizard prefills from it, so a human who presses
+   enter through setup gets an agent that calls itself `temper`. Set
+   `manifest.tagline` too.
+3. `package.json` — `name`, and the `bin` key.
+4. `.env` — **written by the wizard on the first run**, so there is nothing to
+   edit yet. Fix `TEMPER_NAME` in `.env.example`, the reference copy.
+
+`npm run build && npm link` belongs at the end of §8, not here.
+`npm unlink -g temper` clears the stale link and takes the name the package was
+registered under, which is still the old one. Then fix `README.md`.
 
 `TEMPER_NAME` matters more here than for any other agent: it is the name this
-agent answers to in a room full of agents, and the name its peers will use to
-address it. Pick something a person would say out loud.
+agent answers to in a room full of agents, and the name its peers address it
+by. Pick something a person would say out loud.
 
 ---
 
 ## 4. How it reaches the fleet
 
-Agent Update has no direct agent-to-agent channel and will not be getting one.
-Two agents talk in a **room**, which belongs to the human, who reads every word.
-That constraint is the safety property of the whole design: there is no
-conversation between your agents that you are not in.
-
-So the reach is:
+Agent Update has no direct agent-to-agent channel. Two agents talk in a
+**room**, which belongs to the human, who reads every word.
 
 - `fleet` — every room that exists right now, who is in it, and when each was
   last heard from. Read live, every time.
 - `delegate` — resolve the agent's room, post the request, open an assignment.
 - `follow_up` / `room_send` — say something else into a room.
-- Inbound: a peer's post in a room wakes this agent as a turn tagged
-  `[group chat <room> — another agent speaking, not the human]`.
+- Inbound: a peer's post wakes this agent as a turn tagged `[group chat <room>
+  — another agent speaking, not the human]`. `agent/AGENTS.md` already carries
+  the rule for the model, so you do not have to write it: answering a peer is a
+  choice, made with `room_send`, because two agents each answering the other's
+  answer never stops.
 
 The human has to make the rooms in the app. You cannot create one from here and
 neither can the agent. Put that in the setting's `how` steps, because it is the
-one part of setup that has no error message: everything works and `fleet`
-returns an empty list.
+one part of setup with no error message: everything works and `fleet` returns
+an empty list.
 
-### The peer path, and the loop it avoids
-
-A turn started by a **peer** is a different source from a turn started by the
-**human in a room**. The human's message auto-replies back into that room. A
-peer's does not — nothing goes back unless the agent calls `room_send` or
-`follow_up` itself.
-
-That asymmetry is not fussiness. Auto-replying both ways means two agents each
-answering the other's answer, forever, on somebody's plan. `agent/AGENTS.md`
-carries the rule for the model; the runtime enforces the routing.
-
-The practical consequence for this agent: when a peer replies, the useful move
-is almost never to thank it in the room. It is to record what it said, decide
-what changes, and tell the human what the answer means.
+**Note what this constraint is and is not.** The human reading every room is
+*visibility*, not a gate. `delegate` can ask another agent to do something
+irreversible and nothing on this side stops it; that the far side re-gates it
+is a promise its `AGENTS.md` makes, not something the runtime enforces. Say so
+in the north star rather than letting the agent infer that the room makes it
+safe.
 
 ---
 
-## 5. The north star
+## 5. Write the north star
 
-[`NORTH_STAR.md`](NORTH_STAR.md) is longer than the other two and every extra
-paragraph is buying the same thing — an agent that does not confuse its own
-records with the world.
+`agent/NORTH_STAR.md`, from §2's answers, before any code. Every paragraph in
+it is buying one thing: an agent that does not confuse its own records with the
+world.
 
-**The prohibitions are about epistemics, not permissions.** Never conclude an
-agent is dead because it has not answered. Never present bookkeeping as
-observation. Never answer for an agent. Never invent an event, a message, a
-status or a number. Read those four together and they are one rule: *say how
-you know.*
+**The prohibitions are about epistemics.** Never conclude an agent is dead
+because it has not answered. Never present bookkeeping as observation. Never
+answer for an agent. Never invent an event, a message, a status or a number.
+Read those four together and they are one rule: *say how you know.*
 
-**Silence is defined, not assumed.** "Silence is an observation with a duration
-attached — 'asked 14 minutes ago, nothing yet' — and it becomes a finding only
-when you know that agent's normal well enough to expect faster." That sentence
-is why `expect_within_minutes` is optional in `delegate` and why `overdue` is
-false without it. An unknown duration is not lateness.
+**Silence is defined, not assumed.** *An observation with a duration attached —
+"asked 14 minutes ago, nothing yet" — and a finding only when you know that
+agent's normal well enough to expect faster.* That sentence is why
+`expect_within_minutes` is optional and why `overdue` is false without it.
 
 **Room identity is asked for, never remembered.** A room re-made in the app has
 a new id and the same people in it. A post that fails with "that group chat
-does not exist" is a fact about the room, not about the agent — and the
-difference between an agent that reports "librarian did not answer" and one
-that repairs the binding and says so is entirely this paragraph.
+does not exist" is a fact about the room, not about the agent.
 
-**A tool failing is the start of the work.** Read the error, form a guess,
-check it against live state, fix it if it is yours, retry, then say what broke
-and what you did. This is the line that separates the agent from the scripted
-loop it replaces, and it is worth writing into any agent whose job is
-diagnosis.
+**A tool failing is the start of the work.** Read the error, form a guess, check
+it against live state, fix it if it is yours, retry, then say what broke and
+what you did. Worth writing into any agent whose job is diagnosis.
 
-**Quiet hours, with the arithmetic.** An unanswered `ask` buzzes again after
-twenty minutes on the runtime's own timer, which has no idea what hour it is.
-So at night a question is two interruptions, not one. Say that; an agent that
-knows the cost can decide, and one that does not will decide wrong.
+**Quiet hours, with the arithmetic.** An unanswered `ask` nudges again after
+twenty minutes and gives up after an hour — `NUDGE_AFTER` and `GIVE_UP_AFTER`
+in `src/runtime/main.ts`, on a timer with no idea what hour it is. So at night
+a question costs two interruptions, not one. An agent that knows the cost can
+decide; one that does not will decide wrong.
+
+Add a `## Status` section — `detail` is `waiting on librarian`, `metrics` is
+`open 4 · overdue 1 · agents 3`. And `## How it starts`, which is also the only
+place the sweep in §9 can live, because there is nowhere in `agent/` to seed a
+schedule.
 
 ---
 
-## 6. Settings — it does not add one, it changes one
+## 6. Settings
 
-[`settings.ts`](settings.ts) has a single entry, and it is a **replacement**
-for one already in `agent/manifest.ts`.
+[`settings.ts`](settings.ts) is one entry, and it **replaces** the
+`AGENT_UPDATE_TOKEN` already in `agent/manifest.ts` rather than joining it.
+Swap the whole entry: the `why` changes, a fourth `how` step is added telling
+the human to make the rooms, and — the load-bearing part — `optional: true`
+comes off so the wizard blocks on it.
 
-`AGENT_UPDATE_TOKEN` ships optional, because most agents work fine without a
-phone. This one does not work at all: the rooms are the only way it reaches the
-fleet, and a fleet manager that cannot talk to the fleet is not a job. Drop the
-`optional: true` so the wizard blocks on it.
+Most agents work fine without a phone. This one does not work at all: the rooms
+are the only way it reaches the fleet.
 
 Keep `scope: 'runtime'`. The supervisor is the only thing that uses the token,
 so keeping it out of the container's environment means the agent's own shell
-cannot read the credential that speaks *as* the agent. For an agent whose
-entire output is messages in other people's rooms, that is the credential that
-matters most.
+cannot read the credential that speaks *as* the agent.
 
 Everything else it needs is already in the manifest. There are no API keys,
-because it calls no APIs of its own — which is worth noticing, because it means
-this agent's whole risk surface is what it says, not what it touches.
+because it calls no service of its own: this agent's whole risk surface is what
+it says, not what it touches.
 
 ---
 
-## 7. Tools — six, and none of them gated
+## 7. The tools — six, and none of them gated
 
-Nothing in [`tools.ts`](tools.ts) is `effect: 'write'`. That is a decision, not
-an oversight, and it is the one thing about this agent most likely to be
-"corrected" by someone who has not thought it through.
+Nothing in [`tools.ts`](tools.ts) is `effect: 'write'`. These tools only talk,
+in rooms the human reads, and gating them would mean an approval block for
+every sentence of a job that is entirely sentences. The effects live in the
+agents on the other end, behind their own approvals.
 
-Every one of these tools posts into a room the human owns and reads. Talking to
-the human — or to an agent in front of the human — is not an effect on the
-world. `AGENTS.md` already says so for `notify` and `room_send`. Gating them
-would mean an approval block for every sentence of a job that is entirely
-sentences, which is how a gate stops being read. The effects live in the agents
-on the other end, behind their own approvals.
+They go in `agent/tools/work.ts`, a new file next to `_kit.ts`.
 
-If you find yourself wanting a gate here, the thing you actually want is
-usually `ask` — a question with options, which is cheap and does not pretend to
-be a permission boundary.
+| Tool | Arguments | Returns |
+| --- | --- | --- |
+| `fleet` | none | `{checkedAt, rooms: [{id, name, members, lastHeard, openAssignments}], note?}` |
+| `delegate` | `agent`, `request`, `expect_within_minutes?` | `{ok, id, agent, room}` or `{ok: false, reason, rooms}` |
+| `follow_up` | `id`, `message` | `{ok, id, agent, reboundFrom?}` |
+| `heard` | `id`, `what_they_said` | `{ok, id, agent}` |
+| `close_assignment` | `id`, `outcome`, `done` | `{ok, id, agent, done}` |
+| `assignments` | `include_closed?` | `{checkedAt, open, overdue, neverAnswered, closed?, incomplete?}` |
 
-| Tool | What it is for |
-| --- | --- |
-| `fleet` | The company as it stands right now: rooms, members, when each was last heard from, how much open work each has |
-| `delegate` | Resolve a room, post the request, open an assignment |
-| `follow_up` | Say something else on an open assignment; re-resolves the room first |
-| `heard` | Record what an agent actually said, in its words |
-| `close_assignment` | Close it, with an outcome and whether it was actually done |
-| `assignments` | Everything open, how long it has been quiet, what is overdue |
+Two of the runtime's types are `Promise<unknown>` — `ctx.history` and
+`ctx.rooms.list` — so every read needs narrowing you write by hand. There is no
+generic to reach for.
 
 ### The ledger is a fold over the journal
 
-There is no state file, and this is the thing worth stealing from this agent.
+There is no state file. An assignment is the replay of its own events. This is
+the part the guide has to give you in full, because none of it is inferable:
 
-An assignment is the replay of its own events. `ctx.note('assignment', …)`
-appends; `ctx.history(200, 'agent.assignment')` reads them back; `ledger()`
-folds them oldest-first into the current picture.
+```ts
+// Four event shapes, all written under the same journal kind.
+await ctx.note('assignment', { id, step: 'opened', agent, room, roomId, request, expectMinutes });
+await ctx.note('assignment', { id, step: 'followed_up', roomId });
+await ctx.note('assignment', { id, step: 'heard', what });
+await ctx.note('assignment', { id, step: 'closed', outcome, done });
+
+// Read them back. Newest first, so reverse before folding.
+const events = (await ctx.history(LOOKBACK, noted('assignment'))) as JournalEvent[];
+// JournalEvent is { id: number; at: string; kind: string; data: unknown }.
+```
+
+`step` is the discriminator. Everything that identifies the assignment rides on
+`opened` and nothing else; the other three carry only what they change. **No
+event carries a timestamp** — the journal row's `at` is the timestamp, which is
+why `openedAt` and `heardAt` are read off the row rather than the payload.
 
 ```ts
 const noted = (kind: string): string => `agent.${kind}`;
 ```
 
-`ctx.note` writes under `agent.<kind>` and `ctx.history` matches a kind
-exactly. Write with the bare name, read with the prefix. Get this wrong and the
-whole subsystem is write-only without a single error — everything appears to
-work and every list comes back empty.
-
-Why a fold rather than a file:
-
-- **It survives compaction.** The journal is append-only sqlite on the
-  workspace volume. A fresh session after a rotation sees exactly what a
-  week-old one does.
-- **It survives a hard kill.** There is no half-written state to repair.
-- **It is auditable.** The human can read the journal and see what was asked,
-  when, and what came back — the same events the agent is reasoning over.
-
-### The ceiling is real, so it is reported
-
-`ctx.history` clamps at 200. An assignment whose `opened` event has scrolled
-out of that window is invisible to the fold. `assignments` counts orphaned
-events and returns an `incomplete` message when the window is full.
-
-Saying "nothing is outstanding" off a truncated list is the single worst thing
-this agent could do, because it is the exact failure it exists to prevent. A
-bounded read that does not say it is bounded is a lie with extra steps. If you
-build anything on a capped history, make the cap visible in the output.
+`ctx.note` writes under `agent.<kind>` and `ctx.history` matches a kind exactly.
+Write with the bare name, read with the prefix. Get this wrong and the whole
+subsystem is write-only without a single error — everything appears to work and
+every list comes back empty.
 
 ### Silence is measured from their last word, not ours
 
 ```ts
 const silentForMinutes = minutesSince(assignment.heardAt ?? assignment.openedAt);
+const overdue = isOpen(a) && a.expectMinutes !== null && silentForMinutes > a.expectMinutes;
 ```
 
-Measuring from our own last message would mean a chase resets the clock — so
-the more times you nudged a dead agent, the healthier it would look, and it
-would never once read as overdue. This is a one-line bug that inverts the
-agent's entire purpose.
+`minutesSince` rounds and clamps at zero. Measure from your own last message
+instead and a chase resets the clock — so the more times you nudged a dead
+agent, the healthier it would look. `overdue` is strictly greater, and is false
+whenever `expectMinutes` is null: unknown silence is not lateness.
+
+### The window has a ceiling, so report it
+
+`ctx.history` clamps at 200 — silently, `Math.min(limit, 200)`. An assignment
+whose `opened` event has scrolled out of that window is invisible to the fold,
+and an event whose `opened` is gone is an orphan. Fire `incomplete` on
+**either** condition:
+
+```ts
+const saturated = events.length >= LOOKBACK;   // window full
+// orphaned: any non-`opened` event whose id has no assignment in the fold
+incomplete: saturated || orphaned > 0 ? …
+```
+
+Saying "nothing is outstanding" off a truncated list is the exact failure this
+agent exists to prevent. If you build anything on a capped history, make the
+cap visible in the output.
+
+### Where "last heard from" comes from
+
+Not from your own events. The runtime records `journal.record('room.heard', {
+from, room })` in `src/runtime/main.ts` every time a peer posts in a room, and
+that is the only source of a pulse for an agent nobody has delegated to. Read
+it with `ctx.history(LOOKBACK, 'room.heard')` — a bare kind, **not** through
+`noted()`, because the runtime wrote it, not you.
 
 ### Rooms resolve by whole word, and refuse when ambiguous
 
@@ -248,17 +260,21 @@ const escaped = clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(hay);
 ```
 
-Not `includes`. A substring test makes "Bee" match "Beekeeper", and a
-one-letter name match every room on the list — which posts someone's work to
-the wrong agent and then reports success.
+`hay` is the room name plus its members' names, lowercased. Not `includes`: a
+substring test resolves "Bee" against a room called "Beekeeper", which posts
+someone's work to the wrong agent and reports success. The regex refuses that
+and matches a room actually called "Bee".
 
-When two rooms match, `resolveRoom` returns `null` with a reason rather than
-picking the first. Guessing at a delivery address is the kind of error that is
-invisible until the wrong agent does the wrong thing.
+`resolveRoom` returns `{ room: LiveRoom | null; rooms: LiveRoom[]; reason?: string }`
+— `room` is null exactly when there is a `reason`. Two matches is a refusal,
+not a coin toss, and both refusals name the rooms that *do* exist so the model
+can correct itself in one turn.
 
-`follow_up` re-resolves by **agent name**, not by the stored room id, and
-reports `reboundFrom` when the id has changed. That is the north star's "room
-identity is asked for, never remembered" turned into three lines of code.
+The room record on the wire carries more than `fleet` returns —
+`{id, name, members: [{id, name, self, role}], human, humanPresent, createdAt,
+lastMessageAt}` — and the runtime's own `Room` type declares only `{id, name}`.
+Narrow it yourself, and keep `role`: it is what an agent was brought into the
+room to do, which is half of deciding whether it is the agent you meant.
 
 ### A failed post must not open an assignment
 
@@ -267,12 +283,13 @@ const posted = await ctx.rooms.send(found.room.id, args.request);
 if (posted === null || posted === undefined) { … }
 ```
 
-Agent Update returns nothing at all when a send fails — dead room, refused
-token, rate limit. Opening an assignment for a message that never left would
+A send that fails returns nothing rather than throwing, and the five causes —
+429, 5xx, any non-ok, a thrown fetch, a disabled token — are indistinguishable
+from here. Opening an assignment for a message that never left would
 manufacture the one fact this agent must never invent: that somebody was asked.
 Check the result. Every tool here that posts does.
 
-### The empty list has two meanings
+Where an empty result is ambiguous, return the ambiguity:
 
 ```ts
 const EMPTY_MEANS =
@@ -280,9 +297,8 @@ const EMPTY_MEANS =
   'refusing the token — those look the same from here. Check before reporting anything about an agent.';
 ```
 
-Returning `[]` and letting the model narrate it produces "you have no agents
-configured", confidently, during an outage. Where an empty result is ambiguous,
-return the ambiguity.
+Let the model narrate a bare `[]` and it produces "you have no agents
+configured", confidently, during an outage.
 
 ---
 
@@ -302,17 +318,27 @@ export const tools: Tool[] = [
 ];
 ```
 
-Drop the built-in `rooms` tool: `fleet` returns everything it did plus the
-timings, and two tools that list rooms is one more thing for the model to
-choose between. Delete `example.ts` and its import.
+Do §7 first, or `npm run check` is broken in between.
 
-In `agent/manifest.ts`, replace the `AGENT_UPDATE_TOKEN` entry with the one
-from [`settings.ts`](settings.ts) and delete the `WEBHOOK_TOKEN` and
-`NOTES_DIR` placeholders.
+Drop the built-in `rooms` tool: `fleet` covers what it did and adds the
+timings, and two tools that list rooms is one more thing for the model to
+choose between. Then fix the sentence it leaves behind — `room_send`'s
+description in `agent/tools/rooms.ts` says *"Room id from `rooms`"*, and that
+tool no longer exists. Point it at `fleet`. A description is a prompt, and a
+prompt naming a tool the model cannot call is a dead end it will try anyway.
+While you are in there, have `room_send` check its send result, for the reason
+in §7.
+
+Swap the `AGENT_UPDATE_TOKEN` entry in `agent/manifest.ts` for the one in
+[`settings.ts`](settings.ts) — **paste** it, never import, because the
+Dockerfile copies `src/` and `agent/` and nothing else. Delete the
+`WEBHOOK_TOKEN` and `NOTES_DIR` placeholders and `agent/tools/example.ts` in
+the same edit; the tool and the setting it uses are a pair. `.env.example` is
+the same list again, so fix it here too.
 
 Then `agent/AGENTS.md`. Keep the voice; add a `## Work you hand to an agent`
-section with the loop, because this is the part the model gets wrong by
-defaulting to helpfulness:
+section with the loop, because this is what the model gets wrong by defaulting
+to helpfulness:
 
 1. `delegate` to the agent that owns it. Set `expect_within_minutes` from what
    you know its normal to be. That opens an assignment.
@@ -324,19 +350,20 @@ defaulting to helpfulness:
 4. `close_assignment` with `done: true` only when the agent said the work is
    finished. "I'll get to it" is not done. Time passing is not done.
 
-Add one more rule while you are in there, because it is this agent's most
-common failure: **a turn the human started ends with the answer.** Not a status
-line, not "I'll let you know", not a tool call and silence. If you could not
-get it, the answer is what you tried and what stopped you.
+Add one more rule, because it is this agent's most common failure: **a turn the
+human started ends with the answer.** Not a status line, not "I'll let you
+know", not a tool call and silence. If you could not get it, the answer is what
+you tried and what stopped you.
+
+Then `npm run build && npm link`.
 
 ---
 
-## 9. Day one
+## 9. Day one, and the sweep
 
-`## How it starts` says to trust nothing it was told about the fleet. That is
-not humility, it is accuracy: a roster written during setup is stale the first
-time an agent is renamed, and an agent that reports from a stale roster is
-worse than one that reports nothing.
+`## How it starts` says to trust nothing it was told about the fleet. A roster
+written during setup is stale the first time an agent is renamed, and an agent
+reporting from a stale roster is worse than one reporting nothing.
 
 So: call `fleet`, ask each agent what it is for and what it has done this week,
 read the folder it was started in, and write one memory note per agent — what
@@ -345,15 +372,10 @@ usually takes to answer. Mark anything unconfirmed as unconfirmed. Then show
 the human the list and ask the two questions only he can answer: what is
 missing, and who owns what.
 
-That last number — how long each agent usually takes — is the one every future
-`expect_within_minutes` comes from. Without it the agent can report silence but
-never lateness, which is a much weaker product.
+Without that last number the agent can report silence but never lateness.
 
----
-
-## 10. Schedules
-
-One earns its place:
+The sweep goes in the same section, as an instruction — the agent creates it by
+calling the `schedule` tool:
 
 ```
 name:   sweep
@@ -364,27 +386,24 @@ prompt: Call `assignments`. For anything overdue, decide: chase it with
         only if something is overdue or stuck — silence otherwise.
 ```
 
-Hourly is right for this one and it is the exception, not the rule. Most
-agents' schedules should be daily or weekly; this one exists to notice things
-not happening, and a check that runs once a day can only notice a day late.
-
-"Silence otherwise" is doing the same work it does in the calendar agent. A
-sweep that reports "3 open, none overdue" every hour is a sweep the human
-stops reading.
+Hourly is the exception rather than the rule; most agents' schedules should be
+daily or weekly. This one exists to notice things not happening, and a check
+that runs once a day can only notice a day late.
 
 ---
 
-## 11. Test it
+## 10. Test it
 
 ```sh
 npm run check
 npm run build
-npm start -- setup
+npm start -- setup         # needs Docker running: the preflight is before the wizard
 cd ~/somewhere/real && quartermaster
 ```
 
-This agent needs two agents and a room to test properly, and there is no way
-around that. What to check once you have them:
+This agent needs two agents and a room to test properly. Short of that, a fake
+`Ctx` in a scratch harness covers everything except the live peer post — the
+tools take `ctx` and nothing else, which is what makes that possible.
 
 - **Delegate to a name that matches two rooms.** It must refuse and say why,
   not pick one.
@@ -393,15 +412,16 @@ around that. What to check once you have them:
 - **Delete the room in the app, then `follow_up`.** It must re-resolve, post to
   the new room, and report the rebind — not report the agent as silent.
 - **Turn the other agent off and ask where the work is.** The answer must be
-  "asked 40 minutes ago, nothing back" — never "it failed".
+  "asked 40 minutes ago, nothing back", never "it failed".
 - **Let a peer post in the room.** Confirm this agent wakes, and confirm it
   does *not* post an automatic reply back into the room.
-- **Open twelve assignments and never close them.** Confirm `incomplete` fires
-  before the window silently truncates.
+- **Fill the journal window.** Drop `LOOKBACK` to 5 for the test — twelve
+  assignments will not do it, and 200 events by hand is not a test anyone runs.
+  Confirm `incomplete` fires rather than the list quietly getting shorter.
 
 ---
 
-## 12. What breaks
+## 11. What breaks
 
 **It does the work itself.** Reading the inbox is right there and faster than
 asking. One sentence in the north star fixes it: if Librarian owns email, email
@@ -412,26 +432,24 @@ is finding out why Librarian is not answering.
 written on Tuesday. The fix is a phrasing rule, not a capability: say when you
 last checked, every time.
 
-**It closes assignments on acknowledgements.** "On it" is not done. `done:
-true` only on the agent saying the work is finished.
+**It closes assignments on acknowledgements.** "On it" is not done.
 
 **It chases too fast.** Usually `expect_within_minutes` guessed instead of
-learned. Leave it out until the number is real; unknown silence is honest and a
-false deadline is not.
+learned. Leave it out until the number is real.
 
-**Two agents talk forever.** If you see this, something is auto-replying to a
-peer. The routing is deliberate — a peer-woken turn answers nobody unless the
-agent chooses to — so a loop means a tool posted back into the room on every
-turn without deciding to.
+**Two agents talk forever.** Something is auto-replying to a peer. The routing
+is deliberate — a peer-woken turn answers nobody unless the agent chooses to —
+so a loop means a tool posted back into the room on every turn without
+deciding to.
 
 ---
 
 ## What to steal from this one
 
-The journal fold. Any agent that has to remember a commitment across a session
-rotation — a promise made, an invoice sent, a question asked — should keep it as
-appended events rather than as a file it rewrites, and should say out loud when
-its read of those events is truncated.
+Any agent that has to remember a commitment across a session rotation — a
+promise made, an invoice sent, a question asked — should keep it as appended
+events rather than a file it rewrites, and should say out loud when its read of
+those events is truncated.
 
 ---
 

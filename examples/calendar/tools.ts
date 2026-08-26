@@ -228,8 +228,10 @@ export const freebusy = defineTool<{ from: string; to: string; calendars?: strin
   description:
     'Busy blocks across several calendars at once, merged. This is the double-booking check: run ' +
     'it across every calendar that can make him busy — work, shared, family — before claiming a ' +
-    'slot is free. It returns only opaque busy ranges, so events marked free and all-day events ' +
-    'do not appear. A calendar that could not be read comes back with a reason, not as free.',
+    'slot is free. It returns busy ranges only, so anything marked free does not appear. An ' +
+    'all-day event does appear if it is marked busy, which is where this and `clash` disagree — ' +
+    '`clash` ignores all-day events and this does not. A calendar that could not be read comes ' +
+    'back with a reason, never as free.',
   input: input({
     from: { type: 'string', description: 'Start of the window, RFC3339.' },
     to: { type: 'string', description: 'End of the window, RFC3339.' },
@@ -298,7 +300,11 @@ export const hold = defineTool<{
     if (args.action === 'release') {
       if (!args.event_id) throw new Error('release needs an event_id.');
       const event = await mineAlone(ctx, args.event_id);
-      await call(ctx, `/calendars/${encodeURIComponent(id)}/events/${args.event_id}`, { method: 'DELETE' });
+      // sendUpdates=none explicitly, even though a hold has nobody to notify.
+      // Belt and braces on the one tool that does not stop to ask.
+      await call(ctx, `/calendars/${encodeURIComponent(id)}/events/${args.event_id}?sendUpdates=none`, {
+        method: 'DELETE',
+      });
       return `released "${event.summary ?? args.event_id}"`;
     }
 
@@ -317,7 +323,7 @@ export const hold = defineTool<{
     if (args.action === 'move') {
       if (!args.event_id) throw new Error('move needs an event_id.');
       const event = await mineAlone(ctx, args.event_id);
-      await call(ctx, `/calendars/${encodeURIComponent(id)}/events/${args.event_id}`, {
+      await call(ctx, `/calendars/${encodeURIComponent(id)}/events/${args.event_id}?sendUpdates=none`, {
         method: 'PATCH',
         body: JSON.stringify({ start: { dateTime: args.start }, end: { dateTime: args.end } }),
       });
@@ -325,13 +331,17 @@ export const hold = defineTool<{
     }
 
     if (!args.title) throw new Error('create needs a title.');
-    const created = await call(ctx, `/calendars/${encodeURIComponent(id)}/events`, {
+    const created = await call(ctx, `/calendars/${encodeURIComponent(id)}/events?sendUpdates=none`, {
       method: 'POST',
       body: JSON.stringify({
         summary: args.title,
         description: args.notes,
         start: { dateTime: args.start },
         end: { dateTime: args.end },
+        // Opaque, not the calendar's default. A focus block that reads as free
+        // is invisible to `clash` and to everyone else's scheduling tool, which
+        // is the whole thing this agent exists to prevent.
+        transparency: 'opaque',
         // Marked, so a later read can tell his own blocks from the agent's and
         // a cleanup never touches something he put there himself.
         extendedProperties: { private: { heldBy: 'calendar-agent' } },

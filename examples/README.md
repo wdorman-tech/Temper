@@ -1,7 +1,7 @@
 # Examples
 
 Three finished agents. Each is a real job worked all the way through: what it
-is for, where the line is, and the four or five things it can do that the shell
+is for, where the line is, and the two to eight things it can do that the shell
 cannot.
 
 | | The job | The thing worth stealing |
@@ -44,32 +44,29 @@ command — asks for whatever is missing.
 
 None of these examples names a folder on your machine, and yours should not
 either. Each works on whichever folder the human started it in; anything
-outside that folder is a `mountAs` setting they have to name, and two of these
-three deliberately need none.
+outside that folder is a `mountAs` setting they have to name, and none of these
+three needs one.
 
-## A word on the shape of these
+## The shape of these
 
-Notice how few tools each one has. Inside its container the agent already has a
-shell, `curl`, `python3`, `git` and the web — it does not need a tool to read a
-file or do arithmetic. A tool earns its place when it holds a credential, gates
-an effect, or turns a fiddly API into one honest verb. Librarian's whole job
-runs on two.
+Each one has very few tools. Inside its container the agent already has a shell,
+`curl`, `python3`, `git` and the web. A tool earns its place when it holds a
+credential, gates an effect, or turns a fiddly API into one honest verb.
+Librarian's whole job runs on two.
 
-Notice which tools ask. Every tool here that acts on another person — sends,
-books, invites, cancels — is `effect: 'write'`, and every `preview` reads like a
-sentence you could approve at a glance. That is the whole safety story at this
-layer: the agent can think whatever it likes, and the moment it wants to act it
-stops and puts a question block in front of you, in the terminal and on your
-phone, with the options that count. You pick one. A sentence is not a yes, and
-neither is silence; both mean the tool did not run. Write the preview for the
-phone, because that is where you will answer it from.
+Every tool here that acts on another person — sends, books, invites, cancels —
+is `effect: 'write'`, and every `preview` reads like a sentence you could
+approve at a glance. The gate is the whole safety story at this layer; see
+BUILD_GUIDE §4. Write the preview for the phone, because that is where you will
+answer it from.
 
 Talking to the human is exempt. `notify` and `room_send` reach them, not the
 world, and gating those would only teach you to tap yes. Quartermaster has no
 gated tool at all, for exactly that reason, and its guide says so out loud.
 
-Notice last where the rules live. "Never double-book" and "`raw/` is
-append-only" are not paragraphs in a prompt hoping to be obeyed — they are a
-`throw` inside a tool the agent cannot go around. A promise the model can talk
-itself out of is not a promise. Each guide names the two or three lines where
-its job actually becomes safe.
+The rules live in code where they can. "Never double-book" and "`raw/` is
+append-only" are a `throw` in the tool rather than a paragraph in a prompt — so
+the correct path is also the easy one, and every removal lands in the journal
+with a reason attached. The shell can still `rm`: the sandbox is the boundary,
+not the tool. Each guide names the two or three lines where its job actually
+gets safer, and what they do not cover.

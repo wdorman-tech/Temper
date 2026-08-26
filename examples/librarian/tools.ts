@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { type Ctx, defineTool, input } from '../../agent/tools/_kit.ts';
 
@@ -33,6 +33,7 @@ const SEEN = join(VAULT, '.librarian', 'gmail-seen.json');
  */
 const SECRET_PATTERNS = [
   /key/i,
+  /\.env/i,
   /pass/i,
   /login/i,
   /token/i,
@@ -54,14 +55,32 @@ type GmailMessage = { id?: string; threadId?: string; payload?: GmailPart };
 
 /* --------------------------------------------------------------- fetch_mail */
 
+/**
+ * The runtime's own message for a missing gated secret tells the *model* to go
+ * and edit `agent/manifest.ts`, which it cannot do. Mail is optional for this
+ * agent, so the honest failure names the human action instead.
+ */
+async function credential(ctx: Ctx, name: string): Promise<string> {
+  try {
+    return await ctx.secret(name);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.startsWith('no secret named')) throw error;
+    throw new Error(
+      `${name} is not configured, so there is no mail to fetch. Tell the human to run setup again ` +
+        'and fill in the three Google fields, or drop it — the vault works without mail.',
+    );
+  }
+}
+
 async function accessToken(ctx: Ctx): Promise<string> {
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id: await ctx.secret('GMAIL_CLIENT_ID'),
-      client_secret: await ctx.secret('GMAIL_CLIENT_SECRET'),
-      refresh_token: await ctx.secret('GMAIL_REFRESH_TOKEN'),
+      client_id: await credential(ctx, 'GMAIL_CLIENT_ID'),
+      client_secret: await credential(ctx, 'GMAIL_CLIENT_SECRET'),
+      refresh_token: await credential(ctx, 'GMAIL_REFRESH_TOKEN'),
       grant_type: 'refresh_token',
     }),
   });
@@ -202,9 +221,14 @@ export const trash = defineTool<{ path: string; why: string }>({
   }),
   preview: (args) => `trash ${args.path} — ${args.why}`,
   run: async (args, ctx) => {
-    const from = resolve(VAULT, args.path);
-    const rel = relative(VAULT, from);
-    if (!rel || rel.startsWith('..')) throw new Error(`${args.path} is outside the vault.`);
+    // `realpath`, not `resolve`. An Obsidian vault can hold a symlink, and a
+    // symlink inside the project folder resolves on the *host* side of the bind
+    // mount — so a path check built on `resolve` alone walks straight out of the
+    // sandbox while looking like it did not.
+    const from = realpathSync.native(resolve(VAULT, args.path));
+    const rel = relative(realpathSync.native(VAULT), from);
+    if (!rel) throw new Error('That is the vault itself, not a page in it.');
+    if (rel.startsWith('..')) throw new Error(`${args.path} resolves outside the vault.`);
     // Append-only, enforced here rather than hoped for. An agent that can talk
     // its way past this one has taken away the human's only undo.
     if (rel.split('/')[0] === 'raw') {
@@ -212,6 +236,11 @@ export const trash = defineTool<{ path: string; why: string }>({
         'raw/ is append-only. Source material is never removed — write a corrected page elsewhere and link to it.',
       );
     }
+    if (rel.split('/')[0] === '.librarian') {
+      throw new Error(".librarian/ is the agent's own state, not a page. Nothing in it is trashed.");
+    }
+    // Fail loudly. A trash that reports success on a path that was never there
+    // teaches the agent a page is gone when it is not.
     if (!existsSync(from)) throw new Error(`${rel} does not exist.`);
 
     const day = new Date().toISOString().slice(0, 10);
