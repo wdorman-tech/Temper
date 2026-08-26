@@ -241,13 +241,16 @@ const label = (input: Input) => {
   const text = defang(input.text);
   if (input.source === 'phone') return `[from their phone] ${text}`;
   if (input.source === 'room') return `[group chat ${input.label ?? input.origin}] ${text}`;
+  if (input.source === 'peer')
+    return `[group chat ${input.label ?? input.origin} — another agent speaking, not the human] ${text}`;
   if (input.source === 'schedule') return `[scheduled job: ${input.label}] ${text}`;
   return text;
 };
 
 function enqueue(input: Input) {
   queue.push(input);
-  if (input.source !== 'schedule') say('you', input.text, input.source);
+  if (input.source === 'peer') say('system', `${input.label ?? 'another agent'}: ${input.text}`, 'peer');
+  else if (input.source !== 'schedule') say('you', input.text, input.source);
   void pump().catch((error: unknown) => {
     journal.record('pump.failed', { error: String(error) });
     out({ k: 'notice', level: 'error', text: `turn loop failed: ${String(error)}` });
@@ -278,6 +281,9 @@ async function pump() {
           out({ k: 'notice', level: 'error', text: result.error });
         }
         // Reply where the message came from, so a phone thread stays a thread.
+        // `peer` is missing from this filter on purpose: a turn another agent
+        // woke has no addressee. If the agent has something to say back, it
+        // says it with `room_send` — see AGENTS.md, "Group chats".
         if (result.text) {
           for (const roomId of new Set(batch.filter((i) => i.source === 'room').map((i) => i.origin!))) {
             void agentUpdate.sendRoom(roomId, result.text);
@@ -528,6 +534,24 @@ async function boot(hello: Extract<ToAgent, { k: 'hello' }>) {
                 label: message.room?.name ?? message.from ?? undefined,
               });
             }
+          } else if (message.room && message.body && message.from !== agentName) {
+            // Another agent, in a room the human owns and reads. This used to be
+            // polled, marked seen and dropped, which made every group chat
+            // one-way: AGENTS.md told the agent to address a peer by name and
+            // nothing was ever listening on the other side.
+            //
+            // It is `peer`, not `room`, and the difference is the whole fix.
+            // A turn the human started in a room answers back into that room;
+            // a turn a peer started answers nobody unless the agent chooses to
+            // call `room_send`. Two agents each replying to the other's reply
+            // is a loop with no exit and a bill attached.
+            journal.record('room.heard', { from: message.from, room: message.room.name });
+            enqueue({
+              text: message.body,
+              source: 'peer',
+              origin: message.room.id,
+              label: `${message.room.name} · ${message.from ?? 'another agent'}`,
+            });
           }
           agentUpdate.seen(message.id);
         }
