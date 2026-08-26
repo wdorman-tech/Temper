@@ -221,10 +221,10 @@ export const trash = defineTool<{ path: string; why: string }>({
   }),
   preview: (args) => `trash ${args.path} — ${args.why}`,
   run: async (args, ctx) => {
-    // `realpath`, not `resolve`. An Obsidian vault can hold a symlink, and a
-    // symlink inside the project folder resolves on the *host* side of the bind
-    // mount — so a path check built on `resolve` alone walks straight out of the
-    // sandbox while looking like it did not.
+    // `realpath`, not `resolve`. An Obsidian vault can hold a symlink, and the
+    // kernel resolves it against the *container's* filesystem — so `resolve`
+    // alone will happily point this at /workspace/.codex/auth.json or at
+    // another mounted folder, while looking like it checked.
     //
     // It throws on a path that is not there, which is the common case and not an
     // error anyone should have to read a stack trace for. Catch it here, because
@@ -248,8 +248,6 @@ export const trash = defineTool<{ path: string; why: string }>({
     if (rel.split('/')[0] === '.librarian') {
       throw new Error(".librarian/ is the agent's own state, not a page. Nothing in it is trashed.");
     }
-    // Fail loudly. A trash that reports success on a path that was never there
-    // teaches the agent a page is gone when it is not.
     const day = new Date().toISOString().slice(0, 10);
     const to = join(VAULT, '.librarian', 'trash', day, rel);
     mkdirSync(dirname(to), { recursive: true });

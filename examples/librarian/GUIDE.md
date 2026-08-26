@@ -117,10 +117,11 @@ Two cases this design does not cover, and you should raise both at interview:
 - **A second folder that is not the vault.** A Zotero library, a Downloads
   folder the clipper writes to, a shared drive. That is what `mountAs` is
   actually for — the second folder, never the first.
-- **A vault with a symlink in it.** Vaults commonly hold one, and a symlink
-  inside the project folder resolves on the *host* side of the bind mount. §8's
-  path check uses `realpath` for exactly this reason; a check built on `resolve`
-  alone walks straight out of the sandbox while looking like it did not.
+- **A vault with a symlink in it.** Vaults commonly hold one, and the kernel
+  resolves it against the *container's* filesystem — so `resolve` alone will
+  happily point `trash` at `/workspace/.codex/auth.json` or at another mounted
+  folder, while looking like it checked. §8's path check uses `realpath` for
+  exactly that reason.
 
 ---
 
@@ -270,9 +271,11 @@ Five things in there will bite you:
   protects availability, not secrecy. The subject is still in the frontmatter,
   and the rule about live keys in a page body takes over from there.
 - **Write the seen-set once, at the end.** `.librarian/gmail-seen.json`, trimmed
-  to the last 5,000 ids. Per-message writes cost you nothing on a crash; one
-  write at the end loses the record of what was already written. Trim from the
-  front — it is a dedupe set, not a history, and the journal is the history.
+  to the last 5,000 ids. One write costs one syscall instead of fifty, and a
+  crash mid-run replays messages that were already written — which is a
+  duplicate page, not a lost one, and the id suffix in the filename means the
+  replay overwrites rather than duplicating. Trim from the front: it is a dedupe
+  set, not a history, and the journal is the history.
 
 Frontmatter: `title`, `from`, `to`, `date`, `gmail_id`, `gmail_thread`,
 `source: gmail`. Run every header value through `JSON.stringify` — a `From` like
@@ -296,7 +299,9 @@ Not `trash {"path":"notes/Old Stub.md","why":"…"}`. It is not `repeatable`.
 
 ## 8. The rules that live in code
 
-Three checks in [`tools.ts`](tools.ts) enforce two of the four invariants.
+Four checks in [`tools.ts`](tools.ts). Only the third is one of the north
+star's four invariants; the rest are what stop the tool being turned against the
+vault it exists to protect.
 
 ```ts
 let from: string;
@@ -312,9 +317,11 @@ if (rel.startsWith('..')) throw new Error(`${args.path} resolves outside the vau
 
 `realpath`, not `resolve` — see §4. `resolve` normalises `..` and an absolute
 path but does not follow a symlink, and a vault with one in it is a vault the
-agent can walk out of.
+agent can walk out of. The escape is to *container* paths: a link whose target
+is an absolute host path fails `ENOENT` inside the container, so the case worth
+testing is a **relative** link out of the vault.
 
-Three branches, and each of them is a different sentence to the model.
+Three branches here, and each is a different sentence to the model.
 `realpath` **throws** on a path that is not there, which is the common case and
 which would otherwise arrive as a raw `ENOENT` — and an existence check further
 down would never be reached, because this line runs first. An empty `rel` means
@@ -323,7 +330,9 @@ teaches it something false about its own boundary.
 
 ```ts
 if (rel.split('/')[0] === 'raw') {
-  throw new Error('raw/ is append-only. Source material is never removed — write a corrected page instead.');
+  throw new Error(
+    'raw/ is append-only. Source material is never removed — write a corrected page elsewhere and link to it.',
+  );
 }
 if (rel.split('/')[0] === '.librarian') {
   throw new Error(".librarian/ is the agent's own state, not a page. Nothing in it is trashed.");
@@ -361,9 +370,10 @@ export const tools: Tool[] = [
 Do §7 first, or `npm run check` is broken in between.
 
 **Paste** the settings from [`settings.ts`](settings.ts) into
-`agent/manifest.ts` — never import them. The Dockerfile copies `src/` and
-`agent/` into the image and nothing else, so an import from `examples/`
-typechecks on your machine and is missing at runtime. Delete the
+`agent/manifest.ts` — never import them. The image gets `src/protocol.ts`,
+`src/runtime/` and `agent/`; `examples/` is in `.dockerignore` and is never
+copied, so a value import from it typechecks on your machine and is missing at
+runtime. Delete the
 `WEBHOOK_TOKEN` and `NOTES_DIR` placeholders and `agent/tools/example.ts` in
 the same edit; the tool and the setting it uses are a pair. `.env.example` is
 that list again, so fix it here too — a reference file that disagrees with
@@ -439,8 +449,9 @@ Then, for this agent:
 
 - **Ask it to trash something under `raw/`.** It must refuse, and the refusal
   must say why.
-- **Put a symlink in the vault pointing outside it and try to trash through
-  it.** It must refuse. This is the check that proves §4's claim.
+- **Put a *relative* symlink in the vault pointing outside it — `../../..` —
+  and try to trash through it.** It must refuse. An absolute host path fails for
+  the wrong reason, so it tests nothing.
 - **Ask it a question the vault has nothing on.** It must say the vault has
   nothing on it. A fabricated `[[link]]` here is the failure this design exists
   to prevent, and it is the best single test of whether the north star landed.

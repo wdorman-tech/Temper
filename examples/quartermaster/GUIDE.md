@@ -70,9 +70,11 @@ CLAUDE.md says three places. It is four, and one of them cannot be done yet.
 `npm unlink -g temper` clears the stale link and takes the name the package was
 registered under, which is still the old one. Then fix `README.md`.
 
-`TEMPER_NAME` matters more here than for any other agent: it is the name this
-agent answers to in a room full of agents, and the name its peers address it
-by. Pick something a person would say out loud.
+One thing specific to this agent: the name it answers to **in a room** is not
+`TEMPER_NAME`. `src/runtime/main.ts` takes it from `whoami`, so the Agent Update
+app's agent name wins, and `TEMPER_NAME` is only the fallback for an agent with
+no token — which this one cannot be. Name it the same thing in both places; the
+manifest's `how` step already tells the human to.
 
 ---
 
@@ -86,7 +88,7 @@ Agent Update has no direct agent-to-agent channel. Two agents talk in a
 - `delegate` — resolve the agent's room, post the request, open an assignment.
 - `follow_up` / `room_send` — say something else into a room.
 - Inbound: a peer's post wakes this agent as a turn tagged `[group chat <room>
-  — another agent speaking, not the human]`. `agent/AGENTS.md` already carries
+  · <who> — another agent speaking, not the human]`. `agent/AGENTS.md` already carries
   the rule for the model, so you do not have to write it: answering a peer is a
   choice, made with `room_send`, because two agents each answering the other's
   answer never stops.
@@ -132,11 +134,12 @@ does not exist" is a fact about the room, not about the agent.
 it against live state, fix it if it is yours, retry, then say what broke and
 what you did. Worth writing into any agent whose job is diagnosis.
 
-**Quiet hours, with the arithmetic.** An unanswered `ask` nudges again after
-twenty minutes and gives up after an hour — `NUDGE_AFTER` and `GIVE_UP_AFTER`
-in `src/runtime/main.ts`, on a timer with no idea what hour it is. So at night
-a question costs two interruptions, not one. An agent that knows the cost can
-decide; one that does not will decide wrong.
+**Quiet hours, with the arithmetic.** An unanswered `ask` reaches the phone
+three times: the block, a nudge at twenty minutes, and a "too late to answer" at
+the hour — `NUDGE_AFTER` and `GIVE_UP_AFTER` in `src/runtime/main.ts`, on a
+timer with no idea what hour it is. So at night an unanswered question costs
+three messages, not one. An agent that knows the cost can decide; one that does
+not will decide wrong.
 
 Add a `## Status` section — `detail` is `waiting on librarian`, `metrics` is
 `open 4 · overdue 1 · agents 3`. And `## How it starts`, which is also the only
@@ -178,15 +181,16 @@ They go in `agent/tools/work.ts`, a new file next to `_kit.ts`.
 | Tool | Arguments | Returns |
 | --- | --- | --- |
 | `fleet` | none | `{checkedAt, rooms: [{id, name, members, lastHeard, openAssignments}], note?}` |
-| `delegate` | `agent`, `request`, `expect_within_minutes?` | `{ok, id, agent, room}` or `{ok: false, reason, rooms}` |
+| `delegate` | `agent`, `request`, `expect_within_minutes?` | `{ok, id, agent, room}`, or `{ok: false, reason}` — plus `rooms` when the name did not resolve |
 | `follow_up` | `id`, `message` | `{ok, id, agent, reboundFrom?}` |
 | `heard` | `id`, `what_they_said` | `{ok, id, agent}` |
 | `close_assignment` | `id`, `outcome`, `done` | `{ok, id, agent, done}` |
 | `assignments` | `include_closed?` | `{checkedAt, open, overdue, neverAnswered, closed?, incomplete?}` |
 
-Two of the runtime's types are `Promise<unknown>` — `ctx.history` and
-`ctx.rooms.list` — so every read needs narrowing you write by hand. There is no
-generic to reach for.
+Every capability on `Ctx` that returns data returns `Promise<unknown>`.
+`ctx.history`, `ctx.rooms.list` and `ctx.rooms.send` are the three this agent
+reads, and narrowing all three is yours to write. `rooms.send` is the one that
+matters most, because the failed-post check below turns on it.
 
 ### The ledger is a fold over the journal
 
@@ -201,7 +205,7 @@ await ctx.note('assignment', { id, step: 'heard', what });
 await ctx.note('assignment', { id, step: 'closed', outcome, done });
 
 // Read them back. Newest first, so reverse before folding.
-const events = (await ctx.history(LOOKBACK, noted('assignment'))) as JournalEvent[];
+const events = ((await ctx.history(LOOKBACK, noted('assignment'))) as JournalEvent[] | null) ?? [];
 // JournalEvent is { id: number; at: string; kind: string; data: unknown }.
 ```
 
@@ -273,11 +277,13 @@ and matches a room actually called "Bee".
 not a coin toss, and both refusals name the rooms that *do* exist so the model
 can correct itself in one turn.
 
-The room record on the wire carries more than `fleet` returns —
-`{id, name, members: [{id, name, self, role}], human, humanPresent, createdAt,
-lastMessageAt}` — and the runtime's own `Room` type declares only `{id, name}`.
-Narrow it yourself, and keep `role`: it is what an agent was brought into the
-room to do, which is half of deciding whether it is the agent you meant.
+The runtime's `Room` type declares only `{id, name}` and `list()` passes the
+API's objects through untyped, so whatever else is on the wire is yours to
+narrow and yours to verify. In practice a room also carries `members`, each with
+a `name` and a `role`. Keep `role` if it is there — it is what an agent was
+brought into the room to do, which is half of deciding whether it is the one you
+meant — and check it against a live response before you rely on it. This is one
+of the few things in the build the type system will not warn you about.
 
 ### A failed post must not open an assignment
 
@@ -286,9 +292,11 @@ const posted = await ctx.rooms.send(found.room.id, args.request);
 if (posted === null || posted === undefined) { … }
 ```
 
-A send that fails returns nothing rather than throwing, and the five causes —
-429, 5xx, any non-ok, a thrown fetch, a disabled token — are indistinguishable
-from here. Opening an assignment for a message that never left would
+A send that fails returns nothing rather than throwing, and the causes — a
+disabled token, an armed backoff window, 429, 5xx, any other non-ok, a thrown
+fetch — are indistinguishable from here. The backoff is the surprising one: a
+single rate-limited call arms it for a full minute, and every send in that
+minute returns `null` without leaving the process. Opening an assignment for a message that never left would
 manufacture the one fact this agent must never invent: that somebody was asked.
 Check the result. Every tool here that posts does.
 
@@ -333,8 +341,9 @@ While you are in there, have `room_send` check its send result, for the reason
 in §7.
 
 Swap the `AGENT_UPDATE_TOKEN` entry in `agent/manifest.ts` for the one in
-[`settings.ts`](settings.ts) — **paste** it, never import, because the
-Dockerfile copies `src/` and `agent/` and nothing else. Delete the
+[`settings.ts`](settings.ts) — **paste** it, never import: `examples/` is in
+`.dockerignore` and is never copied into the image, so a value import from it
+typechecks on your machine and is missing at runtime. Delete the
 `WEBHOOK_TOKEN` and `NOTES_DIR` placeholders and `agent/tools/example.ts` in
 the same edit; the tool and the setting it uses are a pair. `.env.example` is
 the same list again, so fix it here too.

@@ -333,12 +333,15 @@ on it, without asking" is a sentence some people will not agree to.
 ```ts
 async function clash(ctx: Ctx, start: string, end: string, ignore?: string): Promise<RawEvent | null> {
   const existing = await listEvents(ctx, calendarId(), start, end);
-  return existing.find((event) =>
-    event.id !== ignore &&
-    !allDay(event) &&
-    event.transparency !== 'transparent' &&
-    overlaps(start, end, when(event.start), when(event.end)),
-  ) ?? null;
+  return (
+    existing.find(
+      (event) =>
+        event.id !== ignore &&
+        !allDay(event) &&
+        event.transparency !== 'transparent' &&
+        overlaps(start, end, when(event.start), when(event.end)),
+    ) ?? null
+  );
 }
 ```
 
@@ -431,9 +434,10 @@ Do §7 first. Rewiring `index.ts` before the tool file exists leaves
 clean.
 
 **Paste** the settings from [`settings.ts`](settings.ts) into
-`agent/manifest.ts` — never import them. The Dockerfile copies `src/` and
-`agent/` into the image and nothing else, so an import from `examples/`
-typechecks on your machine and is missing at runtime. Then delete the
+`agent/manifest.ts` — never import them. The image gets `src/protocol.ts`,
+`src/runtime/` and `agent/`; `examples/` is in `.dockerignore` and is never
+copied, so a value import from it typechecks on your machine and is missing at
+runtime. Then delete the
 `WEBHOOK_TOKEN` and `NOTES_DIR` placeholders and `agent/tools/example.ts` in the
 same edit; the tool and the setting it uses are a pair. `.env.example` is the
 same list of settings again, so fix it here too — a reference file that
@@ -512,8 +516,9 @@ What to check that is specific to this agent:
   and confirm that address received the update. This is the one failure that is
   invisible from inside the agent.
 - **Reschedule one occurrence of a weekly meeting.** Next week must not move.
-- **Cold-start it and count the approval blocks** before the first `agenda`
-  returns. Three, not twenty-four.
+- **Cold-start it and exercise all eight tools.** Three credential blocks in
+  total, not three per tool. `agenda` on its own costs three either way, so a
+  test that stops there cannot see the bug.
 
 ---
 

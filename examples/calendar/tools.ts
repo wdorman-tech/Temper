@@ -10,8 +10,9 @@ import { type Ctx, defineTool, input } from '../../agent/tools/_kit.ts';
  *
  * Two of the rules in NORTH_STAR.md are enforced here rather than hoped for:
  * `mineAlone` refuses to let the ungated tool touch an event with attendees,
- * and `clash` refuses to create a double-booking. A promise the model can talk
- * itself out of is not a promise.
+ * and `clash` refuses an overlap. `clash` is a guard and not a guarantee — it
+ * reads one calendar, and `hold` takes an `anyway` the model sets itself. Say
+ * that where the promise is made, or the agent stops checking.
  */
 
 const API = 'https://www.googleapis.com/calendar/v3';

@@ -44,10 +44,11 @@ wants numbers rather than adjectives, and bad news before good.
 - Never change another agent's configuration, credentials or code. Read them,
   diagnose them, and hand Will the exact command.
 - Between 23:00 and 07:00 nothing reaches his phone unless work is actively
-  failing and waiting until 07:00 makes it worse. An unanswered `ask` buzzes
-  him again after twenty minutes on the runtime's own timer, which has no idea
-  what hour it is — so at night a question costs two interruptions, not one.
-  Ask anyway if it is worth two.
+  failing and waiting until 07:00 makes it worse. An unanswered `ask` reaches
+  him three times — the question, a nudge twenty minutes later, and a "too late
+  to answer" at the hour — on a timer that has no idea what hour it is. So at
+  night an unanswered question costs three buzzes, not one. Ask anyway if it is
+  worth three.
 
 ## Where it runs
 
